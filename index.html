@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>WordRank — a daily word game</title>
+<meta name="description" content="Rank five words by how often they're used in everyday English. New puzzle daily." />
+<meta property="og:title" content="WordRank" />
+<meta property="og:description" content="Rank five words by how common they are. A daily brain teaser." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128218;</text></svg>" />
+
+<!-- ============================================================================
+  WORDRANK — daily word-frequency ranking game (formerly "Parlance")
+  ============================================================================
+  CONTEXT FOR FUTURE DEVELOPMENT (human or AI): read this block first.
+  This single file IS the entire product. No build step, no backend, no deps
+  beyond the React/Babel CDN scripts below. Deployed on GitHub Pages.
+
+  ── THE GAME ────────────────────────────────────────────────────────────────
+  One puzzle per day. Player is shown 5 words in a scrambled order and must
+  rank them from MOST to LEAST commonly used in everyday English, in at most
+  4 guesses. After each guess, each card is colored by positional distance
+  from its true rank:
+      GREEN  = exactly right spot (locks)
+      YELLOW = wrong spot (any distance, one away or more)
+      WHITE  = neutral/untouched — this word hasn't been judged in this rank
+               yet (never guessed there, or moved since its last verdict)
+  Win = all green. Share artifact is a Wordle-style emoji grid (one row per
+  guess): e.g.  "WordRank #14 — 3/4" + rows of squares emoji + URL.
+  The theme of each word set exists in data but is NOT shown (blind guess 1).
+
+  ── DESIGN HISTORY / WHY IT IS THE WAY IT IS (hard-won, don't regress) ──────
+  * v1: 4 words, 3-color distance feedback, word sets with huge frequency
+    gaps (MONEY..TROMBONE). Playtest verdict: TOO EASY — solvable on guess 1
+    by intuition alone; feedback never mattered.
+  * v2: binary feedback (green/wrong) + hard word sets. Verdict: TOO GUESSY —
+    binary feedback = Mastermind; nothing to deduce between guesses.
+  * v3: hard word sets (all mid-frequency band, Zipf ~2.4–4.7, adjacent gaps
+    ~0.25–0.5) × 3-color DISTANCE feedback (green/gold/red) × a guess RECORD
+    that shows the actual word arrangement per guess (not anonymous squares)
+    so players can reason across guesses. 5 words (120 orderings), 4 guesses.
+    The intended arc: guess 1 = semantic intuition, guesses 2–3 = constraint
+    deduction. THE DIFFICULTY LIVES IN THE DATA: closer Zipf values = harder.
+  * v4 (CURRENT, WordRank rebrand): collapsed distance feedback from 3 colors
+    to 2 — GREEN (exact) vs YELLOW (wrong, any distance). Red is gone; a
+    near-miss and a total miss now read the same, which pushes players
+    toward the guess RECORD (the actual arrangements) rather than trying to
+    read fine-grained distance signal from color alone. The neutral/untouched
+    tile color (off-white card stock) is now explicitly named WHITE in the
+    key so players understand it as a real state ("not judged in this rank")
+    rather than a rendering default.
+  * Feedback color persistence rule: a card wears its verdict color ONLY
+    while it remains in the position it was judged in; moving it reverts it
+    to neutral (verdicts are about positions, not words). Self-teaching.
+  * v3.1 (playtest, day 1): rules were a one-time intro line that vanished
+    on first interaction — a real player forgot gold-vs-red mid-game and
+    resubmitted their guess-1 arrangement as guess 4 (X/4). Rules + color
+    key are now ALWAYS visible, pinned below the board. Don't hide them.
+    Also added: submit blocks ANY previously tried arrangement.
+  * v3.2 (playtest, day 1): green cards now LOCK ("✓") — they can't
+    be selected, dragged, or displaced when other cards move past them
+    (drag skips over pinned rows; only unlocked cards reflow). Rationale:
+    a tester moved a green card, watched it lose green, and concluded the
+    game was broken. If green states a fact ("this position is correct"),
+    the board must enforce it; letting confirmed-correct cards be displaced
+    as a side effect of insertion punished correct reasoning. Note this is
+    NOT the rejected "confidence lock" player mechanic from early design —
+    it's the game keeping its own feedback promises. Also renamed the
+    selected-card hint "SWAP…" -> "TAP ANOTHER" (read as a button, not an
+    instruction).
+  * Interaction: pointer-based drag to reorder (mobile friendly,
+    touch-action:none) AND tap-two-to-swap (a press moving <6px = tap).
+  * No legend/key chrome: colors are taught once in the intro line and worn
+    on the tiles themselves.
+  * Wordle-isms kept deliberately: daily cadence, guess-rows share grid,
+    solved-in-N as the score, streaks/stats in localStorage.
+
+  ── DATA MODEL / THE CORPUS PLAN (IMPORTANT: DATA IS PLACEHOLDER) ───────────
+  Each puzzle = { theme, words: [{ w, zipf }] } listed MOST→LEAST common,
+  i.e. array index === true rank (0 = most common). All game logic derives
+  from that invariant. `zipf` = log10(frequency per billion words); the
+  reveal screen shows 10^(zipf-3) as "uses per million words".
+  Current zipf values are HAND-ESTIMATED. The plan of record is an offline
+  Python pipeline using the `wordfreq` package (blend of subtitles/wiki/
+  books/web corpora; chosen because multi-source blending best matches
+  general intuition and settles arguments):
+
+      # pip install wordfreq
+      from wordfreq import zipf_frequency
+      words = ["thunder", "penguin", "canoe", "hammock", "toboggan"]
+      for w in sorted(words, key=lambda w: -zipf_frequency(w, "en")):
+          print(w.upper(), round(zipf_frequency(w, "en"), 2))
+
+  Puzzle-set curation rules: concrete nouns; no profanity; avoid ambiguous
+  homographs (BEAR, BAT) since frequency conflates senses; keep adjacent
+  Zipf gaps >= ~0.25 so rankings stay defensible; difficulty is tuned by
+  how contested the middle pairs are. Verify every set against wordfreq
+  before shipping it — some current hand-ordered sets may genuinely be
+  wrong, and the corpus is the referee.
+
+  ── ROADMAP / OPEN THREADS ──────────────────────────────────────────────────
+  * Replace placeholder zipf values via the wordfreq pipeline; expand to
+    365+ puzzle sets (generate candidates programmatically, curate by hand).
+  * Puzzle numbering: currently puzzleNo = daysSinceEpoch+1 and the set is
+    picked by dayNum % PUZZLES.length — fine while testing, but sets repeat.
+    With a full year of sets, make index = dayNum directly.
+  * Possible difficulty levers, in order of gentleness: MAX_GUESSES 4→5;
+    themed days (SHOW_THEME); 6 words; "hard mode" (guesses must respect
+    known constraints, à la Wordle).
+  * Nice-to-haves: countdown handled (see NextPuzzleCountdown); global
+    "% of players solved in N" needs a backend (Cloudflare Worker + KV is
+    the cheap path) — deliberately out of scope for the static version.
+  * SHARE_URL in CONFIG must be set to the real deployed URL.
+  * Dev panel (tap the "No. X" in the header): prev/next/reset/theme toggle
+    for playtesting the whole puzzle list. Stats & saved progress only ever
+    update for TODAY's real puzzle, so dev-roaming can't corrupt them.
+
+  ── PERSISTENCE (localStorage; keys namespaced "wordrank.") ────────────────
+  * wordrank.state — today's in-progress/finished game:
+      { dayNum, order, guesses, status }  (restored on load if same day)
+  * wordrank.stats —
+      { played, wins, dist: {1..MAX_GUESSES}, losses, streak, maxStreak,
+        lastCompletedDay, lastWinDay }
+    Streak = consecutive calendar days with a win; a loss or a skipped day
+    resets it. Stats update exactly once per day (guarded by
+    lastCompletedDay !== dayNum).
+
+  ── VISUAL IDENTITY ("card catalog") ────────────────────────────────────────
+  Lexicography aesthetic: archive gray-green paper (#E8EBE3), index-card
+  tiles, IBM Plex Mono for all data/UI (typewriter/catalog-card voice),
+  Fraunces only for the wordmark & endgame headline. Feedback pair doubles
+  as the palette: leaf green / brass yellow, against the off-white card
+  stock (white = not yet judged in this rank). The signature moment is the
+  endgame "THE RECORD SHOWS" frequency reveal with per-million counts —
+  the game showing its receipts.
+  ============================================================================ -->
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- BUGFIX (do not remove): current @babel/standalone defaults the React
+     preset to the "automatic" JSX runtime, which emits
+     `import { jsx } from "react/jsx-runtime"` — an ESM import that throws
+     "Cannot use import statement outside a module" in the classic script
+     Babel injects. We register a preset pinned to the classic runtime
+     (React.createElement against the UMD globals above). The `env` preset
+     is deliberately NOT used: with no targets it compiles async/await via
+     regenerator (breaks without a polyfill), and every browser that can
+     load this page runs our modern JS natively. -->
+<script>
+  Babel.registerPreset("react-classic", {
+    presets: [[Babel.availablePresets["react"], { runtime: "classic" }]],
+  });
+</script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  html, body { margin: 0; padding: 0; background: #E8EBE3; }
+  button { cursor: pointer; }
+  button:focus-visible { outline: 3px solid #20291F; outline-offset: 2px; }
+  @keyframes pop { 0% { transform: scale(.85); opacity: .4 } 100% { transform: scale(1); opacity: 1 } }
+  @keyframes grow { from { width: 0 } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react-classic">
+const { useState, useMemo, useRef, useEffect } = React;
+
+/* ================= CONFIG — the tuning knobs ================= */
+const CONFIG = {
+  GAME_NAME: "WordRank",
+  MAX_GUESSES: 4,
+  SHOW_THEME: false,          // blind guess 1 (themes exist in data)
+  EPOCH: "2026-07-15",        // day of puzzle #1 (local midnight boundary)
+  SHARE_URL: "timd73.github.io/word-rank",
+};
+
+/* ================= PUZZLES =================
+   Words listed MOST -> LEAST common; index === true rank.
+   zipf = log10 uses per billion words. PLACEHOLDER values —
+   verify/replace via the wordfreq pipeline (see header comment). */
+const PUZZLES = [
+  { theme: "Outdoors", words: [
+    { w: "THUNDER",    zipf: 4.2 },
+    { w: "PENGUIN",    zipf: 3.7 },
+    { w: "CANOE",      zipf: 3.35 },
+    { w: "HAMMOCK",    zipf: 3.05 },
+    { w: "TOBOGGAN",   zipf: 2.4 },
+  ]},
+  { theme: "Around the sink", words: [
+    { w: "SOAP",       zipf: 4.4 },
+    { w: "LEMON",      zipf: 4.1 },
+    { w: "SPIDER",     zipf: 3.85 },
+    { w: "LADDER",     zipf: 3.6 },
+    { w: "FAUCET",     zipf: 3.2 },
+  ]},
+  { theme: "Game night", words: [
+    // wordfreq-verified (2026-07-16, en): tight, even gaps (0.27-0.38)
+    // top to bottom — no easy anchor at either end, deliberately tough.
+    { w: "DICE",       zipf: 3.76 },
+    { w: "RIDDLE",     zipf: 3.44 },
+    { w: "CHECKERS",   zipf: 3.10 },
+    { w: "DOMINOES",   zipf: 2.83 },
+    { w: "BACKGAMMON", zipf: 2.45 },
+  ]},
+  { theme: "The body", words: [
+    { w: "STOMACH",    zipf: 4.6 },
+    { w: "THUMB",      zipf: 4.1 },
+    { w: "ELBOW",      zipf: 3.8 },
+    { w: "EYEBROW",    zipf: 3.4 },
+    { w: "KNUCKLE",    zipf: 3.0 },
+  ]},
+  { theme: "Weather report", words: [
+    { w: "STORM",      zipf: 4.7 },
+    { w: "FOG",        zipf: 4.2 },
+    { w: "HAIL",       zipf: 3.7 },
+    { w: "DRIZZLE",    zipf: 3.0 },
+    { w: "SLEET",      zipf: 2.6 },
+  ]},
+  { theme: "Creatures", words: [
+    { w: "RABBIT",     zipf: 4.4 },
+    { w: "OWL",        zipf: 4.1 },
+    { w: "DONKEY",     zipf: 3.8 },
+    { w: "OTTER",      zipf: 3.2 },
+    { w: "WOMBAT",     zipf: 2.5 },
+  ]},
+  { theme: "Kitchen drawer", words: [
+    { w: "SPOON",      zipf: 4.2 },
+    { w: "KETTLE",     zipf: 3.7 },
+    { w: "WHISK",      zipf: 3.2 },
+    { w: "LADLE",      zipf: 2.8 },
+    { w: "COLANDER",   zipf: 2.4 },
+  ]},
+  { theme: "The band", words: [
+    { w: "DRUM",       zipf: 4.3 },
+    { w: "FLUTE",      zipf: 3.6 },
+    { w: "BANJO",      zipf: 3.15 },
+    { w: "TUBA",       zipf: 2.8 },
+    { w: "MANDOLIN",   zipf: 2.5 },
+  ]},
+  { theme: "Wardrobe", words: [
+    { w: "JACKET",     zipf: 4.4 },
+    { w: "SCARF",      zipf: 3.8 },
+    { w: "CARDIGAN",   zipf: 3.2 },
+    { w: "MITTEN",     zipf: 2.8 },
+    { w: "GALOSHES",   zipf: 2.0 },
+  ]},
+  { theme: "Parts of a house", words: [
+    { w: "GARAGE",     zipf: 4.4 },
+    { w: "PORCH",      zipf: 4.0 },
+    { w: "ATTIC",      zipf: 3.75 },
+    { w: "CELLAR",     zipf: 3.4 },
+    { w: "VERANDA",    zipf: 2.6 },
+  ]},
+  { theme: "Landscape", words: [
+    { w: "VALLEY",     zipf: 4.4 },
+    { w: "CLIFF",      zipf: 4.0 },
+    { w: "SWAMP",      zipf: 3.7 },
+    { w: "MEADOW",     zipf: 3.3 },
+    { w: "RAVINE",     zipf: 2.7 },
+  ]},
+  { theme: "Trades", words: [
+    { w: "PILOT",      zipf: 4.4 },
+    { w: "BUTCHER",    zipf: 3.7 },
+    { w: "PLUMBER",    zipf: 3.4 },
+    { w: "BLACKSMITH", zipf: 3.0 },
+    { w: "COBBLER",    zipf: 2.6 },
+  ]},
+];
+
+/* ================= palette: "card catalog" ================= */
+const C = {
+  paper:  "#E8EBE3",
+  card:   "#F8F8F2",
+  ink:    "#20291F",
+  faint:  "#6B7568",
+  line:   "#C4CBBE",
+  green:  "#3E8E5A",
+  yellow: "#C0912A",
+};
+const VERDICT = {
+  green:  { bg: "#3E8E5A", border: "#2E6B44" },
+  yellow: { bg: "#C0912A", border: "#96701E" },
+};
+
+/* ================= deterministic helpers ================= */
+// Days since EPOCH in the player's local timezone. Everyone in one timezone
+// gets the same puzzle; puzzles roll at local midnight (same as Wordle).
+function daysSinceEpoch() {
+  const ms = new Date(new Date().toDateString()) - new Date(CONFIG.EPOCH + "T00:00:00");
+  return Math.max(0, Math.floor(ms / 86400000));
+}
+// Seeded Fisher-Yates so everyone sees the same scrambled starting board.
+// Guards against dealing the solved order.
+function seededShuffle(n, seed) {
+  const arr = Array.from({ length: n }, (_, i) => i);
+  let s = (seed * 9301 + 49297) % 233280;
+  for (let i = n - 1; i > 0; i--) {
+    s = (s * 9301 + 49297) % 233280;
+    const j = Math.floor((s / 233280) * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  if (arr.every((v, i) => v === i)) arr.push(arr.shift());
+  return arr;
+}
+const perMillion = (zipf) => {
+  const v = Math.pow(10, zipf - 3);
+  return v >= 100 ? Math.round(v) : v >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
+};
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ================= feedback: positional distance ================= */
+// order[i] = word index; word index === true rank. Green = exact position;
+// everything else (off by any amount) is yellow — see v4 note above for why
+// red was dropped.
+function scoreGuess(order) {
+  return order.map((wordIdx, pos) => (wordIdx === pos ? "green" : "yellow"));
+}
+const EMOJI = { green: "\u{1F7E9}", yellow: "\u{1F7E8}" };
+
+/* ================= persistence (localStorage) ================= */
+const LS = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem("wordrank." + key); return v ? JSON.parse(v) : fallback; }
+    catch { return fallback; }
+  },
+  set(key, val) {
+    try { localStorage.setItem("wordrank." + key, JSON.stringify(val)); } catch {}
+  },
+};
+const EMPTY_STATS = () => ({
+  played: 0, wins: 0, losses: 0,
+  dist: Object.fromEntries(Array.from({ length: CONFIG.MAX_GUESSES }, (_, i) => [i + 1, 0])),
+  streak: 0, maxStreak: 0, lastCompletedDay: null, lastWinDay: null,
+});
+
+/* ================= countdown to next puzzle ================= */
+function NextPuzzleCountdown() {
+  const calc = () => {
+    const now = new Date();
+    const midnight = new Date(now); midnight.setHours(24, 0, 0, 0);
+    const s = Math.max(0, Math.floor((midnight - now) / 1000));
+    const h = String(Math.floor(s / 3600)).padStart(2, "0");
+    const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    return h + ":" + m;
+  };
+  const [t, setT] = useState(calc);
+  useEffect(() => { const id = setInterval(() => setT(calc()), 30000); return () => clearInterval(id); }, []);
+  return <span>NEXT PUZZLE IN {t}</span>;
+}
+
+/* ================= the game ================= */
+function WordRank() {
+  const dayNum = daysSinceEpoch();
+  const todayIdx = dayNum % PUZZLES.length;   // TODO with 365+ sets: use dayNum directly
+  const puzzleNoFor = (idx) => (idx === todayIdx ? dayNum + 1 : "T" + (idx + 1)); // dev puzzles get a T-number
+
+  const [puzzleIdx, setPuzzleIdx] = useState(todayIdx);
+  const [showTheme, setShowTheme] = useState(CONFIG.SHOW_THEME);
+  const [devOpen, setDevOpen] = useState(false);
+
+  const puzzle = PUZZLES[puzzleIdx];
+  const n = puzzle.words.length;
+  const isToday = puzzleIdx === todayIdx;
+
+  const initialOrder = useMemo(() => seededShuffle(n, (puzzleIdx + 1) * 7919), [puzzleIdx, n]);
+
+  // Restore today's saved game (if any) on first render.
+  const saved = useMemo(() => {
+    const s = LS.get("state", null);
+    return s && s.dayNum === dayNum ? s : null;
+  }, [dayNum]);
+
+  const [order, setOrder] = useState(saved ? saved.order : initialOrder);
+  const [guesses, setGuesses] = useState(saved ? saved.guesses : []);
+  const [status, setStatus] = useState(saved ? saved.status : "playing");
+  const [selected, setSelected] = useState(null);
+  const [toast, setToast] = useState("");
+  const [stats, setStats] = useState(() => LS.get("stats", EMPTY_STATS()));
+
+  // Persist today's game on every change (never for dev-panel puzzles).
+  useEffect(() => {
+    if (isToday) LS.set("state", { dayNum, order, guesses, status });
+  }, [order, guesses, status, isToday, dayNum]);
+
+  /* ---------- drag state ---------- */
+  const listRef = useRef(null);
+  const rowHRef = useRef(62);
+  const [drag, setDrag] = useState(null); // {from, startY, delta, moved}
+
+  const resetFor = (idx) => {
+    setPuzzleIdx(idx);
+    setOrder(seededShuffle(PUZZLES[idx].words.length, (idx + 1) * 7919));
+    setSelected(null); setGuesses([]); setStatus("playing"); setToast(""); setDrag(null);
+  };
+
+  const done = status !== "playing";
+  const lastGuess = guesses[guesses.length - 1];
+
+  // A tile wears its verdict only while it still sits in the judged position.
+  const tileVerdict = (pos) => {
+    if (!lastGuess) return null;
+    if (lastGuess.order[pos] !== order[pos]) return null;
+    return lastGuess.colors[pos];
+  };
+
+  /* ---------- green locks (playtest v3.2) ----------
+     Green = confirmed correct position, so green cards are PINNED: they
+     can't be selected, dragged, or displaced by other cards moving past
+     them. A tester moved a green card (the interaction allowed it), saw it
+     lose its green, and reasonably concluded the game was broken. If the
+     feedback is a fact, the board should enforce it. */
+  const isLocked = (pos) => tileVerdict(pos) === "green";
+  const unlockedPositions = order.map((_, p) => p).filter((p) => !isLocked(p));
+
+  // Reorder ONLY the unlocked cards: dragged card leaves its slot, is
+  // inserted at the target slot, other unlocked cards reflow through the
+  // unlocked slots in order. Locked cards never move.
+  const buildArrangement = (from, to) => {
+    const words = unlockedPositions.map((p) => order[p]);
+    const fromIdx = unlockedPositions.indexOf(from);
+    const toIdx = unlockedPositions.indexOf(to);
+    if (fromIdx < 0 || toIdx < 0) return order;
+    const [item] = words.splice(fromIdx, 1);
+    words.splice(toIdx, 0, item);
+    const next = [...order];
+    unlockedPositions.forEach((p, i) => { next[p] = words[i]; });
+    return next;
+  };
+
+  // Map a raw pointer position to the nearest unlocked slot, preferring
+  // the drag direction — so a card dragged "through" a pinned row lands
+  // on the far side of it.
+  const nearestUnlocked = (raw, dir) => {
+    if (!isLocked(raw)) return raw;
+    for (let step = 1; step < n; step++) {
+      const fwd = raw + step * dir, back = raw - step * dir;
+      if (fwd >= 0 && fwd < n && !isLocked(fwd)) return fwd;
+      if (back >= 0 && back < n && !isLocked(back)) return back;
+    }
+    return raw;
+  };
+
+  const tapTile = (pos) => {
+    if (done || isLocked(pos)) return;
+    if (selected === null) { setSelected(pos); return; }
+    if (selected === pos) { setSelected(null); return; }
+    const next = [...order];
+    [next[selected], next[pos]] = [next[pos], next[selected]];
+    setOrder(next);
+    setSelected(null);
+  };
+
+  const onPointerDown = (e, pos) => {
+    if (done || isLocked(pos)) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const first = listRef.current && listRef.current.children[0];
+    if (first) rowHRef.current = first.getBoundingClientRect().height + 8;
+    setDrag({ from: pos, startY: e.clientY, delta: 0, moved: false });
+  };
+  const onPointerMove = (e) => {
+    if (!drag) return;
+    const delta = e.clientY - drag.startY;
+    setDrag((d) => d && { ...d, delta, moved: d.moved || Math.abs(delta) > 6 });
+  };
+
+  // Live preview of the arrangement the current drag would produce;
+  // committed on release, and used to compute each card's visual shift
+  // (shifts can be multiple rows when reflowing past a pinned card).
+  const hover = drag && drag.moved
+    ? nearestUnlocked(
+        clamp(drag.from + Math.round(drag.delta / rowHRef.current), 0, n - 1),
+        drag.delta > 0 ? 1 : -1
+      )
+    : null;
+  const preview = drag && drag.moved && hover !== null ? buildArrangement(drag.from, hover) : null;
+
+  const onPointerUp = () => {
+    if (!drag) return;
+    if (!drag.moved) {
+      tapTile(drag.from);
+    } else if (preview) {
+      setOrder(preview);
+      setSelected(null);
+    }
+    setDrag(null);
+  };
+
+  const tileShift = (pos) => {
+    if (!preview || pos === drag.from) return 0;
+    const newPos = preview.indexOf(order[pos]);
+    return (newPos - pos) * rowHRef.current;
+  };
+
+  // Guardrail (playtest): block resubmitting ANY previous arrangement,
+  // not just the immediately preceding one — a confused player burned
+  // their final guess re-trying their guess-1 order.
+  const alreadyGuessed = guesses.some((g) => g.order.join(",") === order.join(","));
+
+  // Stats update exactly once per real day (guarded by lastCompletedDay).
+  const recordCompletion = (won, guessCount) => {
+    if (!isToday) return;
+    setStats((prev) => {
+      if (prev.lastCompletedDay === dayNum) return prev;
+      const next = { ...prev, dist: { ...prev.dist } };
+      next.played += 1;
+      next.lastCompletedDay = dayNum;
+      if (won) {
+        next.wins += 1;
+        next.dist[guessCount] = (next.dist[guessCount] || 0) + 1;
+        next.streak = prev.lastWinDay === dayNum - 1 ? prev.streak + 1 : 1;
+        next.maxStreak = Math.max(next.maxStreak, next.streak);
+        next.lastWinDay = dayNum;
+      } else {
+        next.losses += 1;
+        next.streak = 0;
+      }
+      LS.set("stats", next);
+      return next;
+    });
+  };
+
+  const submit = () => {
+    if (done || alreadyGuessed) return;
+    const colors = scoreGuess(order);
+    const next = [...guesses, { order: [...order], colors }];
+    setGuesses(next);
+    const won = colors.every((c) => c === "green");
+    if (won) { setStatus("won"); recordCompletion(true, next.length); }
+    else if (next.length >= CONFIG.MAX_GUESSES) { setStatus("lost"); recordCompletion(false); }
+  };
+
+  const shareText = () => {
+    const no = isToday ? "#" + (dayNum + 1) : "#" + puzzleNoFor(puzzleIdx);
+    const head = CONFIG.GAME_NAME + " " + no + " — " + (status === "won" ? guesses.length : "X") + "/" + CONFIG.MAX_GUESSES;
+    const grid = guesses.map((g) => g.colors.map((c) => EMOJI[c]).join("")).join("\n");
+    return head + "\n" + grid + "\n" + CONFIG.SHARE_URL;
+  };
+  const doShare = async () => {
+    const text = shareText();
+    // Native share sheet on mobile; clipboard everywhere else.
+    if (navigator.share) {
+      try { await navigator.share({ text }); return; } catch (e) { /* user cancelled -> fall through */ }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast("Copied to clipboard");
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); ta.remove();
+      setToast("Copied to clipboard");
+    }
+    setTimeout(() => setToast(""), 1800);
+  };
+
+  const guessesLeft = CONFIG.MAX_GUESSES - guesses.length;
+  const maxZipf = Math.max(...puzzle.words.map((w) => w.zipf));
+  const winPct = stats.played ? Math.round((stats.wins / stats.played) * 100) : 0;
+  const maxDist = Math.max(1, ...Object.values(stats.dist));
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace", display: "flex", justifyContent: "center", padding: "0 12px 48px" }}>
+      <div style={{ width: "100%", maxWidth: 420 }}>
+
+        {/* header */}
+        <header style={{ textAlign: "center", padding: "26px 0 10px", borderBottom: "2px solid " + C.ink }}>
+          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 40, letterSpacing: "-0.5px", lineHeight: 1 }}>
+            {CONFIG.GAME_NAME}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 8, fontSize: 11, color: C.faint, letterSpacing: "1.5px" }}>
+            {/* tapping the puzzle number opens the dev panel (playtest affordance) */}
+            <button onClick={() => setDevOpen(!devOpen)} style={{ background: "none", border: "none", color: C.faint, fontFamily: "inherit", fontSize: 11, letterSpacing: "1.5px", padding: 0 }}>
+              No. {puzzleNoFor(puzzleIdx)}
+            </button>
+            <span>·</span>
+            <span>{showTheme ? puzzle.theme.toUpperCase() : "RANK BY HOW COMMON"}</span>
+          </div>
+        </header>
+
+        {/* dev panel */}
+        {devOpen && (
+          <div style={{ margin: "10px 0", padding: 10, border: "1px dashed " + C.faint, fontSize: 11, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ color: C.faint }}>DEV</span>
+            <button onClick={() => resetFor((puzzleIdx + PUZZLES.length - 1) % PUZZLES.length)} style={devBtn}>← prev</button>
+            <button onClick={() => resetFor((puzzleIdx + 1) % PUZZLES.length)} style={devBtn}>next →</button>
+            <button onClick={() => setShowTheme(!showTheme)} style={devBtn}>{showTheme ? "hide theme" : "show theme"}</button>
+            <button onClick={() => resetFor(puzzleIdx)} style={devBtn}>reset</button>
+            {!isToday && <span style={{ color: C.faint }}>(test puzzle — no stats)</span>}
+          </div>
+        )}
+
+        {/* rules moved to permanent footer position — see bottom (playtest feedback) */}
+
+        {/* board */}
+        <div style={{ marginTop: 18 }}>
+          <RailLabel text="MOST COMMON" />
+          <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: 8, margin: "6px 0" }}>
+            {order.map((wordIdx, pos) => {
+              const isSel = selected === pos;
+              const verdict = tileVerdict(pos);
+              const locked = isLocked(pos);
+              const isDragged = drag && drag.moved && drag.from === pos;
+              const v = verdict ? VERDICT[verdict] : null;
+              const bg = v ? v.bg : C.card;
+              const fg = verdict ? "#F4F5F0" : C.ink;
+              const numFg = verdict ? "rgba(244,245,240,.6)" : C.faint;
+              const border = v ? v.border : isSel ? C.ink : C.line;
+              return (
+                <button
+                  key={puzzle.words[wordIdx].w}
+                  onPointerDown={(e) => onPointerDown(e, pos)}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={() => setDrag(null)}
+                  disabled={done}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    background: bg, color: fg,
+                    border: "2px solid " + border,
+                    boxShadow: isDragged ? "4px 6px 0 rgba(32,41,31,0.3)" : isSel ? "3px 3px 0 " + C.ink : "2px 2px 0 rgba(32,41,31,0.12)",
+                    transform: isDragged
+                      ? "translateY(" + drag.delta + "px) scale(1.02)"
+                      : "translateY(" + tileShift(pos) + "px)" + (isSel ? " translate(-2px,-2px)" : ""),
+                    transition: isDragged ? "none" : "transform .15s, background .2s, border-color .2s, box-shadow .12s",
+                    zIndex: isDragged ? 10 : 1,
+                    position: "relative",
+                    touchAction: "none",
+                    userSelect: "none", WebkitUserSelect: "none",
+                    padding: "15px 16px", borderRadius: 3,
+                    fontFamily: "inherit", fontSize: 17, fontWeight: 600,
+                    letterSpacing: "1.5px", textAlign: "left",
+                    cursor: locked ? "default" : "pointer",
+                    opacity: done && !verdict ? 0.95 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 11, color: numFg, minWidth: 14 }}>{pos + 1}</span>
+                  <span style={{ flex: 1 }}>{puzzle.words[wordIdx].w}</span>
+                  {!done && (
+                    <span style={{ fontSize: locked ? 10 : 12, letterSpacing: locked ? "1px" : "normal", color: isSel ? C.ink : verdict ? "rgba(244,245,240,.75)" : C.line }}>
+                      {locked ? "✓" : isSel ? "TAP ANOTHER TO SWAP" : "⠿"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <RailLabel text="LEAST COMMON" />
+        </div>
+
+        {/* submit */}
+        {!done && (
+          <button
+            onClick={submit}
+            disabled={alreadyGuessed}
+            style={{
+              width: "100%", marginTop: 16, padding: "14px 0",
+              background: alreadyGuessed ? C.line : C.ink, color: C.paper,
+              border: "none", borderRadius: 3, fontFamily: "inherit",
+              fontWeight: 600, fontSize: 14, letterSpacing: "2px",
+            }}
+          >
+            {alreadyGuessed ? "ALREADY TRIED THIS ORDER" : "SUBMIT — " + guessesLeft + (guessesLeft === 1 ? " TRY" : " TRIES") + " LEFT"}
+          </button>
+        )}
+
+        {/* guess record — shows arrangements, not just colors, to enable deduction */}
+        {guesses.length > 0 && (
+          <div style={{ marginTop: 22 }}>
+            <div style={{ fontSize: 10, letterSpacing: "2px", color: C.faint, marginBottom: 8 }}>RECORD</div>
+            {guesses.map((g, gi) => (
+              <div key={gi} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+                <span style={{ fontSize: 10, color: C.faint, width: 12 }}>{gi + 1}</span>
+                {g.colors.map((c, i) => (
+                  <div key={i} style={{
+                    flex: 1, height: 26, background: VERDICT[c].bg, borderRadius: 2,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "rgba(248,248,242,.92)", fontSize: 9, fontWeight: 600,
+                    letterSpacing: "0.5px", overflow: "hidden", whiteSpace: "nowrap",
+                    animation: "pop .18s ease-out",
+                  }}>
+                    {puzzle.words[g.order[i]].w.length > 7
+                      ? puzzle.words[g.order[i]].w.slice(0, 6) + "…"
+                      : puzzle.words[g.order[i]].w}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* endgame: reveal + share + stats */}
+        {done && (
+          <div style={{ marginTop: 26, background: C.card, border: "2px solid " + C.ink, borderRadius: 3, padding: "18px 16px", boxShadow: "3px 3px 0 rgba(32,41,31,0.2)" }}>
+            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 22, marginBottom: 2 }}>
+              {status === "won" ? "Solved in " + guesses.length : "Out of tries"}
+            </div>
+            <div style={{ fontSize: 11, color: C.faint, letterSpacing: "1px", marginBottom: 14 }}>
+              THE RECORD SHOWS — uses per million words
+            </div>
+            {puzzle.words.map((w, i) => (
+              <div key={w.w} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 600, letterSpacing: "1px" }}>
+                  <span>{i + 1}. {w.w}</span>
+                  <span style={{ color: C.faint }}>{perMillion(w.zipf)}/M</span>
+                </div>
+                <div style={{ height: 8, background: C.paper, borderRadius: 2, marginTop: 3 }}>
+                  <div style={{
+                    height: "100%", borderRadius: 2, background: C.ink,
+                    width: Math.max(4, Math.pow(10, w.zipf - maxZipf) * 100) + "%",
+                    animation: "grow .5s ease-out",
+                  }} />
+                </div>
+              </div>
+            ))}
+
+            <button onClick={doShare} style={{ width: "100%", marginTop: 14, padding: "13px 0", background: C.green, color: "#fff", border: "none", borderRadius: 3, fontFamily: "inherit", fontWeight: 600, fontSize: 14, letterSpacing: "2px" }}>
+              SHARE RESULT
+            </button>
+            {toast && <div style={{ textAlign: "center", fontSize: 11.5, color: C.faint, marginTop: 8 }}>{toast}</div>}
+
+            {/* stats (localStorage) */}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18, paddingTop: 14, borderTop: "1px solid " + C.line }}>
+              <Stat n={stats.played} label="PLAYED" />
+              <Stat n={winPct + "%"} label="WIN" />
+              <Stat n={stats.streak} label="STREAK" />
+              <Stat n={stats.maxStreak} label="BEST" />
+            </div>
+            <div style={{ marginTop: 12 }}>
+              {Object.entries(stats.dist).map(([k, v]) => (
+                <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontSize: 10, color: C.faint, width: 10 }}>{k}</span>
+                  <div style={{ flex: 1, height: 12, background: C.paper, borderRadius: 2 }}>
+                    <div style={{ height: "100%", borderRadius: 2, background: v ? C.green : "transparent", width: Math.max(v ? 8 : 0, (v / maxDist) * 100) + "%" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: C.faint, width: 16, textAlign: "right" }}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ textAlign: "center", fontSize: 10, letterSpacing: "2px", color: C.faint, marginTop: 14 }}>
+              {isToday ? <NextPuzzleCountdown /> : (
+                <button onClick={() => resetFor((puzzleIdx + 1) % PUZZLES.length)} style={{ background: "none", color: C.faint, border: "1px solid " + C.line, borderRadius: 3, fontFamily: "inherit", fontSize: 10, letterSpacing: "2px", padding: "8px 14px" }}>
+                  NEXT TEST PUZZLE
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* always-visible rules (playtest feedback: players forget the color meanings mid-game) */}
+        <div style={{ marginTop: 28, paddingTop: 14, borderTop: "1px solid " + C.line, fontSize: 12, lineHeight: 1.8, color: C.faint, textAlign: "center" }}>
+          <div>
+            <b style={{ color: C.green }}>green</b> = right spot, stays pinned &nbsp;·&nbsp;
+            <b style={{ color: C.yellow }}>yellow</b> = wrong spot &nbsp;·&nbsp;
+            <b style={{ color: C.ink }}>white</b> = not guessed in this rank yet
+          </div>
+          <div>
+            Order from <b style={{ color: C.ink }}>most used</b> to <b style={{ color: C.ink }}>least used</b> in everyday English.
+            Drag to reorder, or tap two to swap. {CONFIG.MAX_GUESSES} tries.
+          </div>
+        </div>
+
+        <footer style={{ textAlign: "center", fontSize: 9.5, color: C.faint, letterSpacing: "1px", marginTop: 30 }}>
+          FREQUENCY DATA: MOSTLY PLACEHOLDER — VERIFIED VIA WORDFREQ WHERE NOTED
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+const devBtn = {
+  background: "none", border: "1px solid #6B7568", color: "#20291F",
+  fontFamily: "inherit", fontSize: 11, padding: "3px 8px", borderRadius: 2,
+};
+function RailLabel({ text }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ flex: 1, height: 1, background: C.line }} />
+      <span style={{ fontSize: 9.5, letterSpacing: "2.5px", color: C.faint }}>{text}</span>
+      <div style={{ flex: 1, height: 1, background: C.line }} />
+    </div>
+  );
+}
+function Stat({ n, label }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 22 }}>{n}</div>
+      <div style={{ fontSize: 9, letterSpacing: "1.5px", color: C.faint }}>{label}</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<WordRank />);
+</script>
+</body>
+</html>
