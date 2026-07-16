@@ -41,14 +41,25 @@
     so players can reason across guesses. 5 words (120 orderings), 4 guesses.
     The intended arc: guess 1 = semantic intuition, guesses 2–3 = constraint
     deduction. THE DIFFICULTY LIVES IN THE DATA: closer Zipf values = harder.
-  * v4 (CURRENT, WordRank rebrand): collapsed distance feedback from 3 colors
-    to 2 — GREEN (exact) vs YELLOW (wrong, any distance). Red is gone; a
-    near-miss and a total miss now read the same, which pushes players
-    toward the guess RECORD (the actual arrangements) rather than trying to
-    read fine-grained distance signal from color alone. The neutral/untouched
+  * v4 (WordRank rebrand): collapsed distance feedback from 3 colors to 2 —
+    GREEN (exact) vs YELLOW (wrong, any distance). Red is gone; a near-miss
+    and a total miss now read the same, which pushes players toward the
+    guess RECORD (the actual arrangements) rather than trying to read
+    fine-grained distance signal from color alone. The neutral/untouched
     tile color (off-white card stock) is now explicitly named WHITE in the
     key so players understand it as a real state ("not judged in this rank")
     rather than a rendering default.
+  * v5 (CURRENT): moved onboarding off the always-visible footer text and
+    into a one-screen HowToPlay primer shown full-bleed on first visit
+    (gated by wordrank.seenIntro in localStorage). It covers goal, the
+    drag/tap-to-swap interaction, and the color key together, once, instead
+    of asking new players to absorb permanent footer text mid-board. A
+    small "ⓘ" button pinned top-right reopens the same primer any time —
+    it does NOT reset seenIntro; it's just a manual re-trigger, so this is
+    not "did they finish onboarding" state, only "have they seen it once
+    unprompted." The persistent footer under the board is now JUST the
+    color key (green/yellow/white) — drag/swap/tries instructions live in
+    the primer only, not duplicated in permanent chrome.
   * Feedback color persistence rule: a card wears its verdict color ONLY
     while it remains in the position it was judged in; moving it reverts it
     to neutral (verdicts are about positions, not words). Self-teaching.
@@ -70,8 +81,10 @@
     instruction).
   * Interaction: pointer-based drag to reorder (mobile friendly,
     touch-action:none) AND tap-two-to-swap (a press moving <6px = tap).
-  * No legend/key chrome: colors are taught once in the intro line and worn
-    on the tiles themselves.
+  * Onboarding chrome: full instructions (goal + interaction + color key)
+    live ONLY in the HowToPlay primer (first-visit modal + reopenable via
+    the "ⓘ" button). Colors are worn on the tiles themselves after that;
+    the permanent footer key is a reminder, not a tutorial.
   * Wordle-isms kept deliberately: daily cadence, guess-rows share grid,
     solved-in-N as the score, streaks/stats in localStorage.
 
@@ -124,6 +137,9 @@
     Streak = consecutive calendar days with a win; a loss or a skipped day
     resets it. Stats update exactly once per day (guarded by
     lastCompletedDay !== dayNum).
+  * wordrank.seenIntro — boolean, set true the first time the HowToPlay
+    primer is dismissed. Only gates the AUTOMATIC first-visit popup; the
+    "ⓘ" button always reopens the primer regardless of this flag.
 
   ── VISUAL IDENTITY ("card catalog") ────────────────────────────────────────
   Lexicography aesthetic: archive gray-green paper (#E8EBE3), index-card
@@ -382,6 +398,11 @@ function WordRank() {
   const [toast, setToast] = useState("");
   const [stats, setStats] = useState(() => LS.get("stats", EMPTY_STATS()));
 
+  // First-visit primer: shown once automatically, reopenable any time via
+  // the "i" button (which does not touch the seenIntro flag).
+  const [showIntro, setShowIntro] = useState(() => !LS.get("seenIntro", false));
+  const closeIntro = () => { LS.set("seenIntro", true); setShowIntro(false); };
+
   // Persist today's game on every change (never for dev-panel puzzles).
   useEffect(() => {
     if (isToday) LS.set("state", { dayNum, order, guesses, status });
@@ -564,7 +585,25 @@ function WordRank() {
   const maxDist = Math.max(1, ...Object.values(stats.dist));
 
   return (
-    <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace", display: "flex", justifyContent: "center", padding: "0 12px 48px" }}>
+    <>
+      {/* reopens the HowToPlay primer any time; does not touch seenIntro */}
+      <button
+        onClick={() => setShowIntro(true)}
+        aria-label="How to play"
+        style={{
+          position: "fixed", top: 14, right: 14, zIndex: 50,
+          width: 30, height: 30, borderRadius: "50%",
+          background: C.card, border: "1.5px solid " + C.ink, color: C.ink,
+          fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 15,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "2px 2px 0 rgba(32,41,31,0.15)",
+        }}
+      >
+        i
+      </button>
+      {showIntro && <HowToPlay onClose={closeIntro} maxGuesses={CONFIG.MAX_GUESSES} />}
+
+      <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace", display: "flex", justifyContent: "center", padding: "0 12px 48px" }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
 
         {/* header */}
@@ -752,24 +791,19 @@ function WordRank() {
           </div>
         )}
 
-        {/* always-visible rules (playtest feedback: players forget the color meanings mid-game) */}
+        {/* always-visible color key only — full rules live in the HowToPlay primer (see "i" button) */}
         <div style={{ marginTop: 28, paddingTop: 14, borderTop: "1px solid " + C.line, fontSize: 12, lineHeight: 1.8, color: C.faint, textAlign: "center" }}>
-          <div>
-            <b style={{ color: C.green }}>green</b> = right spot, stays pinned &nbsp;·&nbsp;
-            <b style={{ color: C.yellow }}>yellow</b> = wrong spot &nbsp;·&nbsp;
-            <b style={{ color: C.ink }}>white</b> = not guessed in this rank yet
-          </div>
-          <div>
-            Order from <b style={{ color: C.ink }}>most used</b> to <b style={{ color: C.ink }}>least used</b> in everyday English.
-            Drag to reorder, or tap two to swap. {CONFIG.MAX_GUESSES} tries.
-          </div>
+          <b style={{ color: C.green }}>green</b> = right spot, stays pinned &nbsp;·&nbsp;
+          <b style={{ color: C.yellow }}>yellow</b> = wrong spot &nbsp;·&nbsp;
+          <b style={{ color: C.ink }}>white</b> = not guessed in this rank yet
         </div>
 
         <footer style={{ textAlign: "center", fontSize: 9.5, color: C.faint, letterSpacing: "1px", marginTop: 30 }}>
           FREQUENCY DATA: MOSTLY PLACEHOLDER — VERIFIED VIA WORDFREQ WHERE NOTED
         </footer>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -791,6 +825,68 @@ function Stat({ n, label }) {
     <div style={{ textAlign: "center" }}>
       <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 22 }}>{n}</div>
       <div style={{ fontSize: 9, letterSpacing: "1.5px", color: C.faint }}>{label}</div>
+    </div>
+  );
+}
+
+/* ================= HowToPlay: one-screen primer ================= */
+// Shown full-bleed on first visit (gated by wordrank.seenIntro); reopenable
+// any time via the "i" button. Owns ALL onboarding content — the permanent
+// footer under the board only repeats the color key, not the rules.
+const swatch = {
+  display: "inline-block", width: 11, height: 11, borderRadius: 2,
+  marginRight: 7, verticalAlign: "middle", flexShrink: 0,
+};
+function HowStep({ n, children }) {
+  return (
+    <div style={{ display: "flex", gap: 10, marginBottom: 12, fontSize: 13, lineHeight: 1.5 }}>
+      <span style={{
+        flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
+        background: C.ink, color: C.paper, fontSize: 11, fontWeight: 700,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>{n}</span>
+      <span>{children}</span>
+    </div>
+  );
+}
+function HowToPlay({ onClose, maxGuesses }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 100, background: "rgba(32,41,31,0.92)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 380, maxHeight: "90vh", overflowY: "auto",
+        background: C.card, color: C.ink, border: "2px solid " + C.ink, borderRadius: 4,
+        padding: "26px 22px", boxShadow: "4px 4px 0 rgba(0,0,0,0.3)",
+        fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace",
+      }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 26, textAlign: "center" }}>
+          HOW TO PLAY
+        </div>
+        <div style={{ fontSize: 11, letterSpacing: "1.5px", color: C.faint, textAlign: "center", marginBottom: 20 }}>
+          A NEW WORD-FREQUENCY PUZZLE EVERY DAY
+        </div>
+
+        <HowStep n="1">Rank 5 words from <b>most</b> to <b>least</b> commonly used in everyday English.</HowStep>
+        <HowStep n="2">Drag a card to reorder it, or tap two cards to swap them.</HowStep>
+        <HowStep n="3">Submit your order — each card is scored by how close it lands to its true rank.</HowStep>
+        <HowStep n="4">You get {maxGuesses} tries. All green means solved.</HowStep>
+
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid " + C.line, fontSize: 12.5, lineHeight: 2 }}>
+          <div><span style={{ ...swatch, background: C.green }} /><b>green</b> — right spot, locks in place</div>
+          <div><span style={{ ...swatch, background: C.yellow }} /><b>yellow</b> — wrong spot</div>
+          <div><span style={{ ...swatch, background: C.card, border: "1.5px solid " + C.line }} /><b>white</b> — not guessed in this rank yet</div>
+        </div>
+
+        <button onClick={onClose} style={{
+          width: "100%", marginTop: 22, padding: "14px 0",
+          background: C.ink, color: C.paper, border: "none", borderRadius: 3,
+          fontFamily: "inherit", fontWeight: 600, fontSize: 14, letterSpacing: "2px",
+        }}>
+          GOT IT — LET'S PLAY
+        </button>
+      </div>
     </div>
   );
 }
