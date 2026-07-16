@@ -13,11 +13,25 @@
   gtag('config', 'G-W95DLSXD3M');
 </script>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>WordRank — a daily word game</title>
-<meta name="description" content="Rank five words by how often they're used in everyday English. New puzzle daily." />
-<meta property="og:title" content="WordRank" />
-<meta property="og:description" content="Rank five words by how common they are. A daily brain teaser." />
+<meta name="description" content="Rank five words by how common they are in everyday English. A new puzzle every day, about a minute to play." />
+<link rel="canonical" href="https://timd73.github.io/word-rank/" />
+
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://timd73.github.io/word-rank/" />
+<meta property="og:title" content="WordRank — a daily word game" />
+<meta property="og:description" content="Rank five words by how common they are in everyday English. A new puzzle every day, about a minute to play." />
+<meta property="og:image" content="https://timd73.github.io/word-rank/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="WordRank — rank five words by how common they are in everyday English." />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="WordRank — a daily word game" />
+<meta name="twitter:description" content="Rank five words by how common they are in everyday English. A new puzzle every day, about a minute to play." />
+<meta name="twitter:image" content="https://timd73.github.io/word-rank/og-image.png" />
+
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128218;</text></svg>" />
 
 <!-- ============================================================================
@@ -125,6 +139,26 @@
     (SOAP/soap opera, GHOST/ghosting, THOR-the-myth/THOR-the-movie) was
     left alone — the bar is "different enough sense that a player would
     feel cheated," not "has any other meaning at all."
+  * v10 (CURRENT, launch-readiness pass from external playtest feedback):
+    - SHARE_URL was a bare "domain/path" string — some share targets won't
+      auto-link text without a scheme. Now a full "https://…/" URL, and
+      the share text got a one-line tagline (SHARE_TAGLINE) between the
+      score header and the emoji grid so a share reads standalone, out of
+      context, without the reader having ever seen the game.
+    - Added full Open Graph + Twitter Card tags (og:image at og-image.png,
+      1200×630, generated to match the in-game palette/typography — see
+      that file's own generation script if you need to regenerate it;
+      og:url, twitter:card=summary_large_image) — previously a shared link
+      had no preview image at all, which reads as low-effort on Reddit/
+      Discord/Slack.
+    - Removed maximum-scale=1.0 / user-scalable=no from the viewport meta.
+      Disabling pinch-zoom is an accessibility anti-pattern on modern
+      sites and wasn't load-bearing for anything the game does.
+    - Added a one-line "about" under the header (visible immediately, no
+      HowToPlay tap required) — external feedback specifically flagged
+      that a cold visitor from a social link should get what/how/how-long
+      without opening Help. HowToPlay's subtitle got the same "~1 minute"
+      framing for consistency.
   * Feedback color persistence rule: a card wears its verdict color ONLY
     while it remains in the position it was judged in; moving it reverts it
     to neutral (verdicts are about positions, not words). Self-teaching.
@@ -193,7 +227,6 @@
   * Nice-to-haves: countdown handled (see NextPuzzleCountdown); global
     "% of players solved in N" needs a backend (Cloudflare Worker + KV is
     the cheap path) — deliberately out of scope for the static version.
-  * SHARE_URL in CONFIG must be set to the real deployed URL.
   * The old dev panel (puzzle-list roaming for playtesting) is gone as of
     v8 — if you need to preview a future PUZZLES entry, temporarily edit
     EPOCH or add a throwaway entry at PUZZLES[dayNum % PUZZLES.length]
@@ -291,7 +324,8 @@ const CONFIG = {
   MAX_GUESSES: 4,
   SHOW_THEME: false,          // blind guess 1 (themes exist in data)
   EPOCH: "2026-07-15",        // day of puzzle #1 (local midnight boundary)
-  SHARE_URL: "timd73.github.io/word-rank",
+  SHARE_URL: "https://timd73.github.io/word-rank/",
+  SHARE_TAGLINE: "Ranked English words by frequency.",
   FEEDBACK_URL: "https://docs.google.com/forms/d/e/1FAIpQLSfJ7bYGx1v-NTih8bA8MUiyeODGsdp8R2oGXyIdXJQH4jUhBA/viewform?usp=publish-editor",
 };
 
@@ -814,7 +848,10 @@ function WordRank() {
   const shareText = () => {
     const head = CONFIG.GAME_NAME + " #" + (dayNum + 1) + " — " + (status === "won" ? guesses.length : "X") + "/" + CONFIG.MAX_GUESSES;
     const grid = guesses.map((g) => g.colors.map((c) => EMOJI[c]).join("")).join("\n");
-    return head + "\n" + grid + "\n" + CONFIG.SHARE_URL;
+    // Tagline line + full https:// URL (not just a bare domain/path) so the
+    // share reads on its own out of context and auto-links reliably in
+    // apps that require a scheme to detect a URL (playtest feedback).
+    return head + "\n" + CONFIG.SHARE_TAGLINE + "\n" + grid + "\n" + CONFIG.SHARE_URL;
   };
   const doShare = async () => {
     const text = shareText();
@@ -882,6 +919,11 @@ function WordRank() {
             <span>No. {dayNum + 1}</span>
             <span>·</span>
             <span>{CONFIG.SHOW_THEME ? puzzle.theme.toUpperCase() : "RANK BY HOW COMMON"}</span>
+          </div>
+          {/* one-line "about" for anyone who lands here cold (e.g. from a
+              social link) and hasn't opened the HowToPlay primer yet */}
+          <div style={{ marginTop: 6, fontSize: 11.5, color: C.ink, opacity: 0.75 }}>
+            Sort 5 words most → least common. ~1 min, {CONFIG.MAX_GUESSES} tries.
           </div>
         </header>
 
@@ -1096,7 +1138,7 @@ function HowToPlay({ onClose, maxGuesses }) {
           HOW TO PLAY
         </div>
         <div style={{ fontSize: 11, letterSpacing: "1.5px", color: C.faint, textAlign: "center", marginBottom: 20 }}>
-          A NEW WORD-FREQUENCY PUZZLE EVERY DAY
+          A NEW PUZZLE EVERY DAY — ABOUT A MINUTE TO PLAY
         </div>
 
         <HowStep n="1">Rank 5 words from <b>most</b> to <b>least</b> commonly used in everyday English.</HowStep>
