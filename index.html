@@ -159,7 +159,17 @@
       that a cold visitor from a social link should get what/how/how-long
       without opening Help. HowToPlay's subtitle got the same "~1 minute"
       framing for consistency.
-  * Feedback color persistence rule: a card wears its verdict color ONLY
+  * v11 (CURRENT, pre-launch pass): two upcoming sets had "coin-flip"
+    adjacent pairs where the Zipf gap (~0.02-0.06) is arguably corpus
+    noise rather than signal, not just "hard" — fixed by swapping ONE word
+    each, re-verified via the pipeline: "Weather report" (puzzle #5, July
+    19) had HAIL/FOG at 0.02 — dropped FOG for BLIZZARD, gaps now all
+    >=0.32. "The band" (puzzle #8) had TUBA/MANDOLIN at 0.06 — dropped
+    MANDOLIN for CYMBAL, gaps now all >=0.25. Did NOT touch puzzle #2
+    ("Around the sink," today's live puzzle, gaps as tight as 0.07-0.08) —
+    saved games store word INDICES (see wordrank.state), so editing an
+    already-live set would corrupt in-progress/finished boards for anyone
+    who played it; only ever edit a set before its date is reached.
     while it remains in the position it was judged in; moving it reverts it
     to neutral (verdicts are about positions, not words). Self-teaching.
   * v3.1 (playtest, day 1): rules were a one-time intro line that vanished
@@ -365,9 +375,11 @@ const PUZZLES = [
     { w: "KNUCKLE",    zipf: 3.22 },
   ]},
   { theme: "Weather report", words: [
+    // v11: FOG swapped for BLIZZARD — HAIL/FOG was a 0.02 gap (~5% freq
+    // difference, below corpus reliability). Gaps now 0.74/0.39/0.38/0.32.
     { w: "STORM",      zipf: 4.66 },
     { w: "HAIL",       zipf: 3.92 },
-    { w: "FOG",        zipf: 3.90 },
+    { w: "BLIZZARD",   zipf: 3.53 },
     { w: "DRIZZLE",    zipf: 3.15 },
     { w: "SLEET",      zipf: 2.83 },
   ]},
@@ -386,11 +398,13 @@ const PUZZLES = [
     { w: "COLANDER",   zipf: 2.37 },
   ]},
   { theme: "The band", words: [
+    // v11: MANDOLIN swapped for CYMBAL — TUBA/MANDOLIN was a 0.06 gap.
+    // Gaps now 0.59/0.25/0.43/0.25.
     { w: "DRUM",       zipf: 4.11 },
     { w: "FLUTE",      zipf: 3.52 },
     { w: "BANJO",      zipf: 3.27 },
     { w: "TUBA",       zipf: 2.84 },
-    { w: "MANDOLIN",   zipf: 2.78 },
+    { w: "CYMBAL",     zipf: 2.59 },
   ]},
   { theme: "Wardrobe", words: [
     { w: "JACKET",     zipf: 4.32 },
