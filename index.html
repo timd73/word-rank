@@ -49,17 +49,35 @@
     tile color (off-white card stock) is now explicitly named WHITE in the
     key so players understand it as a real state ("not judged in this rank")
     rather than a rendering default.
-  * v5 (CURRENT): moved onboarding off the always-visible footer text and
-    into a one-screen HowToPlay primer shown full-bleed on first visit
-    (gated by wordrank.seenIntro in localStorage). It covers goal, the
-    drag/tap-to-swap interaction, and the color key together, once, instead
-    of asking new players to absorb permanent footer text mid-board. A
-    small "ⓘ" button pinned top-right reopens the same primer any time —
-    it does NOT reset seenIntro; it's just a manual re-trigger, so this is
-    not "did they finish onboarding" state, only "have they seen it once
-    unprompted." The persistent footer under the board is now JUST the
-    color key (green/yellow/white) — drag/swap/tries instructions live in
-    the primer only, not duplicated in permanent chrome.
+  * v5: moved onboarding off the always-visible footer text and into a
+    one-screen HowToPlay primer shown full-bleed on first visit (gated by
+    wordrank.seenIntro in localStorage). It covers goal, the drag/tap-to-
+    swap interaction, and the color key together, once, instead of asking
+    new players to absorb permanent footer text mid-board. A small "ⓘ"
+    button pinned top-right reopens the same primer any time — it does NOT
+    reset seenIntro; it's just a manual re-trigger, so this is not "did
+    they finish onboarding" state, only "have they seen it once unprompted."
+  * v6 (CURRENT, mobile pass): real playtest on a 3-year-old iPhone found
+    two problems. (1) The color key lived in the footer, below the board —
+    on a short phone it scrolled out of view during actual play, exactly
+    when it's needed. Moved to a compact one-line version ABOVE the board,
+    under the header; the footer keeps only the placeholder-data disclaimer.
+    (2) The 5-tile board + submit button — the actual game — must fit
+    above the fold with NO scrolling on a small phone; everything else
+    (dev panel, record, disclaimer) may scroll. Got there by compacting
+    header padding/font, tile padding, row gaps, and button margins — verify
+    with a real viewport (iPhone SE 375×667 is the tightest common target)
+    before changing these numbers again, not by eyeballing a desktop window.
+    (3) The endgame reveal (share + stats + frequency receipts) was inline
+    content stacked below the board, so on a short phone it read as "stuck
+    at the bottom" and the SHARE button — the thing players actually want —
+    was the *last* thing, after the frequency reveal. It's now a full-screen
+    ResultsOverlay (same modal pattern as HowToPlay) ordered headline → SHARE
+    → stats → frequency reveal (the receipts are a bonus, not the goal).
+    "← BACK TO PUZZLE" hides the overlay so players can see their finished
+    (locked-green) board; a floating "VIEW RESULTS" pill reopens it — same
+    reopen pattern as the "ⓘ" button, so the app now has exactly one idiom
+    for "temporarily-dismissed overlay you can bring back."
   * Feedback color persistence rule: a card wears its verdict color ONLY
     while it remains in the position it was judged in; moving it reverts it
     to neutral (verdicts are about positions, not words). Self-teaching.
@@ -403,6 +421,13 @@ function WordRank() {
   const [showIntro, setShowIntro] = useState(() => !LS.get("seenIntro", false));
   const closeIntro = () => { LS.set("seenIntro", true); setShowIntro(false); };
 
+  // Results overlay: shown automatically whenever the puzzle is done (fresh
+  // win/loss, or a completed game restored from localStorage). "BACK TO
+  // PUZZLE" hides it so players can still see their finished board; a
+  // floating pill brings it back (playtest feedback: results were pushed
+  // to the bottom of the page and easy to miss/lose on a short phone).
+  const [showResults, setShowResults] = useState(true);
+
   // Persist today's game on every change (never for dev-panel puzzles).
   useEffect(() => {
     if (isToday) LS.set("state", { dayNum, order, guesses, status });
@@ -417,6 +442,7 @@ function WordRank() {
     setPuzzleIdx(idx);
     setOrder(seededShuffle(PUZZLES[idx].words.length, (idx + 1) * 7919));
     setSelected(null); setGuesses([]); setStatus("playing"); setToast(""); setDrag(null);
+    setShowResults(true);
   };
 
   const done = status !== "playing";
@@ -606,14 +632,15 @@ function WordRank() {
       <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace", display: "flex", justifyContent: "center", padding: "0 12px 48px" }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
 
-        {/* header */}
-        <header style={{ textAlign: "center", padding: "26px 0 10px", borderBottom: "2px solid " + C.ink }}>
-          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 40, letterSpacing: "-0.5px", lineHeight: 1 }}>
+        {/* header — kept compact on purpose: header + key + 5 tiles + submit
+            must all fit above the fold on a small phone (see v6 note) */}
+        <header style={{ textAlign: "center", padding: "12px 0 6px", borderBottom: "2px solid " + C.ink }}>
+          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 28, letterSpacing: "-0.5px", lineHeight: 1 }}>
             {CONFIG.GAME_NAME}
           </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 8, fontSize: 11, color: C.faint, letterSpacing: "1.5px" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 4, fontSize: 10.5, color: C.faint, letterSpacing: "1.5px" }}>
             {/* tapping the puzzle number opens the dev panel (playtest affordance) */}
-            <button onClick={() => setDevOpen(!devOpen)} style={{ background: "none", border: "none", color: C.faint, fontFamily: "inherit", fontSize: 11, letterSpacing: "1.5px", padding: 0 }}>
+            <button onClick={() => setDevOpen(!devOpen)} style={{ background: "none", border: "none", color: C.faint, fontFamily: "inherit", fontSize: 10.5, letterSpacing: "1.5px", padding: 0 }}>
               No. {puzzleNoFor(puzzleIdx)}
             </button>
             <span>·</span>
@@ -633,12 +660,20 @@ function WordRank() {
           </div>
         )}
 
-        {/* rules moved to permanent footer position — see bottom (playtest feedback) */}
+        {/* color key — pinned at TOP, not the bottom: on a short phone the
+            bottom of the page can scroll out of view mid-game, and players
+            need this while looking at the board, not after scrolling past
+            it (real feedback — see v6 note in the header comment). */}
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "3px 12px", margin: "8px 0 2px", fontSize: 10.5, color: C.faint }}>
+          <span><span style={{ ...swatch, background: C.green }} />exact</span>
+          <span><span style={{ ...swatch, background: C.yellow }} />wrong spot</span>
+          <span><span style={{ ...swatch, background: C.card, border: "1.5px solid " + C.line }} />unguessed</span>
+        </div>
 
         {/* board */}
-        <div style={{ marginTop: 18 }}>
+        <div style={{ marginTop: 6 }}>
           <RailLabel text="MOST COMMON" />
-          <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: 8, margin: "6px 0" }}>
+          <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: 6, margin: "5px 0" }}>
             {order.map((wordIdx, pos) => {
               const isSel = selected === pos;
               const verdict = tileVerdict(pos);
@@ -670,8 +705,8 @@ function WordRank() {
                     position: "relative",
                     touchAction: "none",
                     userSelect: "none", WebkitUserSelect: "none",
-                    padding: "15px 16px", borderRadius: 3,
-                    fontFamily: "inherit", fontSize: 17, fontWeight: 600,
+                    padding: "11px 14px", borderRadius: 3,
+                    fontFamily: "inherit", fontSize: 16, fontWeight: 600,
                     letterSpacing: "1.5px", textAlign: "left",
                     cursor: locked ? "default" : "pointer",
                     opacity: done && !verdict ? 0.95 : 1,
@@ -697,7 +732,7 @@ function WordRank() {
             onClick={submit}
             disabled={alreadyGuessed}
             style={{
-              width: "100%", marginTop: 16, padding: "14px 0",
+              width: "100%", marginTop: 10, padding: "12px 0",
               background: alreadyGuessed ? C.line : C.ink, color: C.paper,
               border: "none", borderRadius: 3, fontFamily: "inherit",
               fontWeight: 600, fontSize: 14, letterSpacing: "2px",
@@ -709,14 +744,14 @@ function WordRank() {
 
         {/* guess record — shows arrangements, not just colors, to enable deduction */}
         {guesses.length > 0 && (
-          <div style={{ marginTop: 22 }}>
-            <div style={{ fontSize: 10, letterSpacing: "2px", color: C.faint, marginBottom: 8 }}>RECORD</div>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 10, letterSpacing: "2px", color: C.faint, marginBottom: 6 }}>RECORD</div>
             {guesses.map((g, gi) => (
-              <div key={gi} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+              <div key={gi} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, color: C.faint, width: 12 }}>{gi + 1}</span>
                 {g.colors.map((c, i) => (
                   <div key={i} style={{
-                    flex: 1, height: 26, background: VERDICT[c].bg, borderRadius: 2,
+                    flex: 1, height: 24, background: VERDICT[c].bg, borderRadius: 2,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     color: "rgba(248,248,242,.92)", fontSize: 9, fontWeight: 600,
                     letterSpacing: "0.5px", overflow: "hidden", whiteSpace: "nowrap",
@@ -732,77 +767,45 @@ function WordRank() {
           </div>
         )}
 
-        {/* endgame: reveal + share + stats */}
-        {done && (
-          <div style={{ marginTop: 26, background: C.card, border: "2px solid " + C.ink, borderRadius: 3, padding: "18px 16px", boxShadow: "3px 3px 0 rgba(32,41,31,0.2)" }}>
-            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 22, marginBottom: 2 }}>
-              {status === "won" ? "Solved in " + guesses.length : "Out of tries"}
-            </div>
-            <div style={{ fontSize: 11, color: C.faint, letterSpacing: "1px", marginBottom: 14 }}>
-              THE RECORD SHOWS — uses per million words
-            </div>
-            {puzzle.words.map((w, i) => (
-              <div key={w.w} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 600, letterSpacing: "1px" }}>
-                  <span>{i + 1}. {w.w}</span>
-                  <span style={{ color: C.faint }}>{perMillion(w.zipf)}/M</span>
-                </div>
-                <div style={{ height: 8, background: C.paper, borderRadius: 2, marginTop: 3 }}>
-                  <div style={{
-                    height: "100%", borderRadius: 2, background: C.ink,
-                    width: Math.max(4, Math.pow(10, w.zipf - maxZipf) * 100) + "%",
-                    animation: "grow .5s ease-out",
-                  }} />
-                </div>
-              </div>
-            ))}
-
-            <button onClick={doShare} style={{ width: "100%", marginTop: 14, padding: "13px 0", background: C.green, color: "#fff", border: "none", borderRadius: 3, fontFamily: "inherit", fontWeight: 600, fontSize: 14, letterSpacing: "2px" }}>
-              SHARE RESULT
-            </button>
-            {toast && <div style={{ textAlign: "center", fontSize: 11.5, color: C.faint, marginTop: 8 }}>{toast}</div>}
-
-            {/* stats (localStorage) */}
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18, paddingTop: 14, borderTop: "1px solid " + C.line }}>
-              <Stat n={stats.played} label="PLAYED" />
-              <Stat n={winPct + "%"} label="WIN" />
-              <Stat n={stats.streak} label="STREAK" />
-              <Stat n={stats.maxStreak} label="BEST" />
-            </div>
-            <div style={{ marginTop: 12 }}>
-              {Object.entries(stats.dist).map(([k, v]) => (
-                <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                  <span style={{ fontSize: 10, color: C.faint, width: 10 }}>{k}</span>
-                  <div style={{ flex: 1, height: 12, background: C.paper, borderRadius: 2 }}>
-                    <div style={{ height: "100%", borderRadius: 2, background: v ? C.green : "transparent", width: Math.max(v ? 8 : 0, (v / maxDist) * 100) + "%" }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: C.faint, width: 16, textAlign: "right" }}>{v}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ textAlign: "center", fontSize: 10, letterSpacing: "2px", color: C.faint, marginTop: 14 }}>
-              {isToday ? <NextPuzzleCountdown /> : (
-                <button onClick={() => resetFor((puzzleIdx + 1) % PUZZLES.length)} style={{ background: "none", color: C.faint, border: "1px solid " + C.line, borderRadius: 3, fontFamily: "inherit", fontSize: 10, letterSpacing: "2px", padding: "8px 14px" }}>
-                  NEXT TEST PUZZLE
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* always-visible color key only — full rules live in the HowToPlay primer (see "i" button) */}
-        <div style={{ marginTop: 28, paddingTop: 14, borderTop: "1px solid " + C.line, fontSize: 12, lineHeight: 1.8, color: C.faint, textAlign: "center" }}>
-          <b style={{ color: C.green }}>green</b> = right spot, stays pinned &nbsp;·&nbsp;
-          <b style={{ color: C.yellow }}>yellow</b> = wrong spot &nbsp;·&nbsp;
-          <b style={{ color: C.ink }}>white</b> = not guessed in this rank yet
-        </div>
-
-        <footer style={{ textAlign: "center", fontSize: 9.5, color: C.faint, letterSpacing: "1px", marginTop: 30 }}>
+        <footer style={{ textAlign: "center", fontSize: 9, color: C.faint, letterSpacing: "1px", marginTop: 20 }}>
           FREQUENCY DATA: MOSTLY PLACEHOLDER — VERIFIED VIA WORDFREQ WHERE NOTED
         </footer>
       </div>
       </div>
+
+      {/* endgame: reveal + share + stats, as an overlay (not stacked inline
+          below the board) so it's never just "at the bottom" past a scroll —
+          see v6 note. "BACK TO PUZZLE" hides it; the pill below reopens it. */}
+      {done && showResults && (
+        <ResultsOverlay
+          onClose={() => setShowResults(false)}
+          won={status === "won"}
+          guessCount={guesses.length}
+          words={puzzle.words}
+          maxZipf={maxZipf}
+          stats={stats}
+          winPct={winPct}
+          maxDist={maxDist}
+          isToday={isToday}
+          onNextPuzzle={() => resetFor((puzzleIdx + 1) % PUZZLES.length)}
+          doShare={doShare}
+          toast={toast}
+        />
+      )}
+      {done && !showResults && (
+        <button
+          onClick={() => setShowResults(true)}
+          style={{
+            position: "fixed", bottom: 18, left: "50%", transform: "translateX(-50%)",
+            zIndex: 60, background: C.ink, color: C.paper, border: "none", borderRadius: 20,
+            padding: "11px 20px", fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+            fontWeight: 600, fontSize: 12, letterSpacing: "1.5px",
+            boxShadow: "2px 3px 0 rgba(0,0,0,0.25)",
+          }}
+        >
+          {status === "won" ? "VIEW RESULTS" : "VIEW ANSWER"}
+        </button>
+      )}
     </>
   );
 }
@@ -886,6 +889,93 @@ function HowToPlay({ onClose, maxGuesses }) {
         }}>
           GOT IT — LET'S PLAY
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ================= ResultsOverlay: endgame as a full-screen overlay =====
+   Order is deliberate (playtest feedback): headline, then SHARE (the thing
+   players actually came here to do), then stats — NOT the frequency reveal
+   first. "THE RECORD SHOWS" reveal is last: satisfying but least urgent.
+   "BACK TO PUZZLE" lets players see their finished (all-green/locked) board
+   underneath; WordRank renders a floating "VIEW RESULTS" pill to reopen. */
+function ResultsOverlay({ onClose, won, guessCount, words, maxZipf, stats, winPct, maxDist, isToday, onNextPuzzle, doShare, toast }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 90, background: "rgba(32,41,31,0.92)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 380, maxHeight: "90vh", overflowY: "auto",
+        background: C.card, color: C.ink, border: "2px solid " + C.ink, borderRadius: 4,
+        padding: "16px 18px 20px", boxShadow: "4px 4px 0 rgba(0,0,0,0.3)",
+        fontFamily: "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace",
+      }}>
+        <button onClick={onClose} style={{
+          background: "none", border: "none", color: C.faint, fontFamily: "inherit",
+          fontSize: 11, letterSpacing: "1px", padding: 0, marginBottom: 14,
+        }}>
+          ← BACK TO PUZZLE
+        </button>
+
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 800, fontSize: 24, textAlign: "center" }}>
+          {won ? "Solved in " + guessCount : "Out of tries"}
+        </div>
+
+        <button onClick={doShare} style={{ width: "100%", marginTop: 14, padding: "13px 0", background: C.green, color: "#fff", border: "none", borderRadius: 3, fontFamily: "inherit", fontWeight: 600, fontSize: 14, letterSpacing: "2px" }}>
+          SHARE RESULT
+        </button>
+        {toast && <div style={{ textAlign: "center", fontSize: 11.5, color: C.faint, marginTop: 8 }}>{toast}</div>}
+
+        {/* stats (localStorage) */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18, paddingTop: 14, borderTop: "1px solid " + C.line }}>
+          <Stat n={stats.played} label="PLAYED" />
+          <Stat n={winPct + "%"} label="WIN" />
+          <Stat n={stats.streak} label="STREAK" />
+          <Stat n={stats.maxStreak} label="BEST" />
+        </div>
+        <div style={{ marginTop: 12 }}>
+          {Object.entries(stats.dist).map(([k, v]) => (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <span style={{ fontSize: 10, color: C.faint, width: 10 }}>{k}</span>
+              <div style={{ flex: 1, height: 12, background: C.paper, borderRadius: 2 }}>
+                <div style={{ height: "100%", borderRadius: 2, background: v ? C.green : "transparent", width: Math.max(v ? 8 : 0, (v / maxDist) * 100) + "%" }} />
+              </div>
+              <span style={{ fontSize: 10, color: C.faint, width: 16, textAlign: "right" }}>{v}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* frequency reveal — the receipts, last because it's a bonus, not the goal */}
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid " + C.line }}>
+          <div style={{ fontSize: 11, color: C.faint, letterSpacing: "1px", marginBottom: 12 }}>
+            THE RECORD SHOWS — uses per million words
+          </div>
+          {words.map((w, i) => (
+            <div key={w.w} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 600, letterSpacing: "1px" }}>
+                <span>{i + 1}. {w.w}</span>
+                <span style={{ color: C.faint }}>{perMillion(w.zipf)}/M</span>
+              </div>
+              <div style={{ height: 8, background: C.paper, borderRadius: 2, marginTop: 3 }}>
+                <div style={{
+                  height: "100%", borderRadius: 2, background: C.ink,
+                  width: Math.max(4, Math.pow(10, w.zipf - maxZipf) * 100) + "%",
+                  animation: "grow .5s ease-out",
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ textAlign: "center", fontSize: 10, letterSpacing: "2px", color: C.faint, marginTop: 16 }}>
+          {isToday ? <NextPuzzleCountdown /> : (
+            <button onClick={onNextPuzzle} style={{ background: "none", color: C.faint, border: "1px solid " + C.line, borderRadius: 3, fontFamily: "inherit", fontSize: 10, letterSpacing: "2px", padding: "8px 14px" }}>
+              NEXT TEST PUZZLE
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
