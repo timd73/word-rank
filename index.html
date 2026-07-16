@@ -2,6 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-W95DLSXD3M"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-W95DLSXD3M');
+</script>
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>WordRank — a daily word game</title>
 <meta name="description" content="Rank five words by how often they're used in everyday English. New puzzle daily." />
@@ -78,6 +89,42 @@
     (locked-green) board; a floating "VIEW RESULTS" pill reopens it — same
     reopen pattern as the "ⓘ" button, so the app now has exactly one idiom
     for "temporarily-dismissed overlay you can bring back."
+  * v7: added GA4 analytics (see the ANALYTICS section below for the full
+    event list).
+  * v8 (CURRENT, prime-time cleanup): shipped for real, so the dev panel
+    (tap "No. X" → prev/next/reset/theme-toggle to roam the whole PUZZLES
+    list) is GONE — it was a playtesting tool, and leaving a hidden menu
+    reachable by tapping the puzzle number is exactly the kind of thing a
+    real player finds by accident and reports as a bug. Removing it made
+    `isToday`/`puzzleIdx`-switching/`resetFor` dead weight too (there is no
+    way to ever be on a puzzle other than today's anymore), so those got
+    deleted rather than kept around unreachable — includes simplifying the
+    v7 analytics gating (it used to guard against dev-panel test puzzles;
+    now every play is a real one, so the guards are just gone, not
+    dead-code `if (true)`s). Also added a "PROBLEMS OR FEEDBACK?" link in
+    the footer (Google Form) with its own `feedback_link_clicked` event —
+    see FEEDBACK_URL in CONFIG to change the destination.
+  * v9 (CURRENT): expanded PUZZLES from 12 to 30 (indices 0-29) and ran
+    EVERY set — the original 12 included — through the wordfreq pipeline;
+    none are hand-estimated placeholders anymore (several of the original
+    12 had the WRONG order once checked against real data — e.g. "Around
+    the sink" was shipped as SOAP>LEMON>SPIDER>LADDER>FAUCET; the real
+    order is SPIDER>SOAP>LEMON>LADDER>FAUCET). At 30 puzzles and one/day
+    from EPOCH, puzzle #30 lands on 2026-08-13; puzzle #31 (2026-08-14)
+    wraps back to index 0 ("Outdoors") since dayNum % PUZZLES.length only
+    has 30 slots — add more sets before then or the list starts repeating.
+    Curation caught three words that look fine but fail the "avoid
+    ambiguous homographs" rule HARD because the alternate sense is both
+    unrelated AND at least as common as the intended one: PHOENIX (mythic
+    bird vs. the US city — dropped from "Myth and monsters"), FAMILIAR
+    (witch's companion vs. the far more common adjective — dropped from
+    "Wizardry"), RAPTOR (dinosaur vs. the ordinary word for any bird of
+    prey — dropped from "Dinosaurs"), and STAR as a night-sky anchor (its
+    celebrity sense likely dominates frequency more than the astronomical
+    one — "Night sky" now anchors on MOON instead). Ordinary polysemy
+    (SOAP/soap opera, GHOST/ghosting, THOR-the-myth/THOR-the-movie) was
+    left alone — the bar is "different enough sense that a player would
+    feel cheated," not "has any other meaning at all."
   * Feedback color persistence rule: a card wears its verdict color ONLY
     while it remains in the position it was judged in; moving it reverts it
     to neutral (verdicts are about positions, not words). Self-teaching.
@@ -106,15 +153,16 @@
   * Wordle-isms kept deliberately: daily cadence, guess-rows share grid,
     solved-in-N as the score, streaks/stats in localStorage.
 
-  ── DATA MODEL / THE CORPUS PLAN (IMPORTANT: DATA IS PLACEHOLDER) ───────────
+  ── DATA MODEL / THE CORPUS PLAN ────────────────────────────────────────────
   Each puzzle = { theme, words: [{ w, zipf }] } listed MOST→LEAST common,
   i.e. array index === true rank (0 = most common). All game logic derives
   from that invariant. `zipf` = log10(frequency per billion words); the
   reveal screen shows 10^(zipf-3) as "uses per million words".
-  Current zipf values are HAND-ESTIMATED. The plan of record is an offline
-  Python pipeline using the `wordfreq` package (blend of subtitles/wiki/
-  books/web corpora; chosen because multi-source blending best matches
-  general intuition and settles arguments):
+  All 30 shipped sets are VERIFIED against real data (v9) — none are
+  hand-estimated placeholders. The pipeline for generating/checking more:
+  an offline Python script using the `wordfreq` package (blend of
+  subtitles/wiki/books/web corpora; chosen because multi-source blending
+  best matches general intuition and settles arguments):
 
       # pip install wordfreq
       from wordfreq import zipf_frequency
@@ -122,16 +170,20 @@
       for w in sorted(words, key=lambda w: -zipf_frequency(w, "en")):
           print(w.upper(), round(zipf_frequency(w, "en"), 2))
 
-  Puzzle-set curation rules: concrete nouns; no profanity; avoid ambiguous
-  homographs (BEAR, BAT) since frequency conflates senses; keep adjacent
-  Zipf gaps >= ~0.25 so rankings stay defensible; difficulty is tuned by
-  how contested the middle pairs are. Verify every set against wordfreq
-  before shipping it — some current hand-ordered sets may genuinely be
-  wrong, and the corpus is the referee.
+  Puzzle-set curation rules: concrete nouns (a few unambiguous abstract
+  nouns are fine, e.g. RIDDLE, LUCK); no profanity; avoid ambiguous
+  homographs (BEAR, BAT, and see v9 for PHOENIX/FAMILIAR/RAPTOR/STAR) since
+  frequency conflates senses; adjacent Zipf gaps ideally >= ~0.25, but a
+  tighter gap is an accepted difficulty lever, NOT a defect, as long as the
+  number is real — ordinary polysemy that doesn't change the obvious
+  meaning is fine too. Verify every set against wordfreq before shipping
+  it; the corpus is the referee, even when it contradicts intuition.
 
   ── ROADMAP / OPEN THREADS ──────────────────────────────────────────────────
-  * Replace placeholder zipf values via the wordfreq pipeline; expand to
-    365+ puzzle sets (generate candidates programmatically, curate by hand).
+  * PUZZLES has 30 verified sets (see v9) — the list repeats starting
+    2026-08-14 (puzzle #31). Add more sets (30 more buys another month)
+    before then, working toward 365+ (generate candidates via the wordfreq
+    pipeline, curate by hand, run the same homograph screen v9 used).
   * Puzzle numbering: currently puzzleNo = daysSinceEpoch+1 and the set is
     picked by dayNum % PUZZLES.length — fine while testing, but sets repeat.
     With a full year of sets, make index = dayNum directly.
@@ -142,9 +194,10 @@
     "% of players solved in N" needs a backend (Cloudflare Worker + KV is
     the cheap path) — deliberately out of scope for the static version.
   * SHARE_URL in CONFIG must be set to the real deployed URL.
-  * Dev panel (tap the "No. X" in the header): prev/next/reset/theme toggle
-    for playtesting the whole puzzle list. Stats & saved progress only ever
-    update for TODAY's real puzzle, so dev-roaming can't corrupt them.
+  * The old dev panel (puzzle-list roaming for playtesting) is gone as of
+    v8 — if you need to preview a future PUZZLES entry, temporarily edit
+    EPOCH or add a throwaway entry at PUZZLES[dayNum % PUZZLES.length]
+    locally; don't re-add a shipped in-app puzzle switcher.
 
   ── PERSISTENCE (localStorage; keys namespaced "wordrank.") ────────────────
   * wordrank.state — today's in-progress/finished game:
@@ -158,6 +211,34 @@
   * wordrank.seenIntro — boolean, set true the first time the HowToPlay
     primer is dismissed. Only gates the AUTOMATIC first-visit popup; the
     "ⓘ" button always reopens the primer regardless of this flag.
+
+  ── ANALYTICS (GA4 via gtag.js, measurement ID G-W95DLSXD3M) ───────────────
+  GA4 already tracks unique users, sessions, and page_views automatically
+  via its own client_id cookie/localStorage — that needed no code here. The
+  game-specific layer is a thin `track(name, params)` wrapper (swallows
+  errors so a blocked/missing gtag never breaks the game) firing these
+  custom events (every play is a real one as of v8 — no more dev-panel
+  test puzzles to exclude):
+  * puzzle_view — { puzzle_no, day_num } once per page load.
+  * howto_shown — { trigger: "auto" | "manual" } — auto on a genuine first
+    visit (mirrors the wordrank.seenIntro gate), manual via the "ⓘ" button.
+  * howto_dismissed — { first_time } from the primer's own dismiss button.
+  * guess_submitted — { puzzle_no, guess_number, green_count, is_win } every
+    submit.
+  * game_complete — { puzzle_no, result: "win"|"loss", guesses_used,
+    max_guesses } once per finished game.
+  * share — GA4's recommended event name/shape: { method: "native" |
+    "clipboard" | "clipboard_fallback", content_type, item_id, result,
+    guesses_used }. Fired per SUCCESSFUL path, not per tap — a cancelled
+    native share sheet falls through to the clipboard copy and gets
+    attributed there instead, so this reflects what actually happened.
+  * results_dismissed / results_reopened — { puzzle_no } for "← BACK TO
+    PUZZLE" and the floating "VIEW RESULTS" pill (see v6 note).
+  * feedback_link_clicked — { puzzle_no } from the footer's "PROBLEMS OR
+    FEEDBACK?" link (opens CONFIG.FEEDBACK_URL, a Google Form, in a new tab).
+  None of this is wired to GA4 custom dimensions/reports yet — that's a
+  one-time setup in the GA4 admin UI (Admin → Custom definitions), not code;
+  until then the params are still visible per-event in DebugView/Explore.
 
   ── VISUAL IDENTITY ("card catalog") ────────────────────────────────────────
   Lexicography aesthetic: archive gray-green paper (#E8EBE3), index-card
@@ -211,30 +292,31 @@ const CONFIG = {
   SHOW_THEME: false,          // blind guess 1 (themes exist in data)
   EPOCH: "2026-07-15",        // day of puzzle #1 (local midnight boundary)
   SHARE_URL: "timd73.github.io/word-rank",
+  FEEDBACK_URL: "https://docs.google.com/forms/d/e/1FAIpQLSfJ7bYGx1v-NTih8bA8MUiyeODGsdp8R2oGXyIdXJQH4jUhBA/viewform?usp=publish-editor",
 };
 
 /* ================= PUZZLES =================
-   Words listed MOST -> LEAST common; index === true rank.
-   zipf = log10 uses per billion words. PLACEHOLDER values —
-   verify/replace via the wordfreq pipeline (see header comment). */
+   Words listed MOST -> LEAST common; index === true rank. zipf = log10
+   uses per billion words (English), via the wordfreq pipeline (see header
+   comment) — ALL 30 sets below are verified, not hand-estimated (v9).
+   Runs out after puzzle #30 (2026-08-13) — see v9 note for what happens
+   next and the homograph swaps made while curating this batch. */
 const PUZZLES = [
   { theme: "Outdoors", words: [
-    { w: "THUNDER",    zipf: 4.2 },
-    { w: "PENGUIN",    zipf: 3.7 },
-    { w: "CANOE",      zipf: 3.35 },
-    { w: "HAMMOCK",    zipf: 3.05 },
-    { w: "TOBOGGAN",   zipf: 2.4 },
+    { w: "THUNDER",    zipf: 4.14 },
+    { w: "PENGUIN",    zipf: 3.78 },
+    { w: "CANOE",      zipf: 3.50 },
+    { w: "HAMMOCK",    zipf: 3.14 },
+    { w: "TOBOGGAN",   zipf: 2.31 },
   ]},
   { theme: "Around the sink", words: [
-    { w: "SOAP",       zipf: 4.4 },
-    { w: "LEMON",      zipf: 4.1 },
-    { w: "SPIDER",     zipf: 3.85 },
-    { w: "LADDER",     zipf: 3.6 },
-    { w: "FAUCET",     zipf: 3.2 },
+    { w: "SPIDER",     zipf: 4.25 },
+    { w: "SOAP",       zipf: 4.18 },
+    { w: "LEMON",      zipf: 4.10 },
+    { w: "LADDER",     zipf: 4.03 },
+    { w: "FAUCET",     zipf: 3.07 },
   ]},
   { theme: "Game night", words: [
-    // wordfreq-verified (2026-07-16, en): tight, even gaps (0.27-0.38)
-    // top to bottom — no easy anchor at either end, deliberately tough.
     { w: "DICE",       zipf: 3.76 },
     { w: "RIDDLE",     zipf: 3.44 },
     { w: "CHECKERS",   zipf: 3.10 },
@@ -242,67 +324,193 @@ const PUZZLES = [
     { w: "BACKGAMMON", zipf: 2.45 },
   ]},
   { theme: "The body", words: [
-    { w: "STOMACH",    zipf: 4.6 },
-    { w: "THUMB",      zipf: 4.1 },
-    { w: "ELBOW",      zipf: 3.8 },
-    { w: "EYEBROW",    zipf: 3.4 },
-    { w: "KNUCKLE",    zipf: 3.0 },
+    { w: "STOMACH",    zipf: 4.42 },
+    { w: "THUMB",      zipf: 4.01 },
+    { w: "ELBOW",      zipf: 3.84 },
+    { w: "EYEBROW",    zipf: 3.37 },
+    { w: "KNUCKLE",    zipf: 3.22 },
   ]},
   { theme: "Weather report", words: [
-    { w: "STORM",      zipf: 4.7 },
-    { w: "FOG",        zipf: 4.2 },
-    { w: "HAIL",       zipf: 3.7 },
-    { w: "DRIZZLE",    zipf: 3.0 },
-    { w: "SLEET",      zipf: 2.6 },
+    { w: "STORM",      zipf: 4.66 },
+    { w: "HAIL",       zipf: 3.92 },
+    { w: "FOG",        zipf: 3.90 },
+    { w: "DRIZZLE",    zipf: 3.15 },
+    { w: "SLEET",      zipf: 2.83 },
   ]},
   { theme: "Creatures", words: [
-    { w: "RABBIT",     zipf: 4.4 },
-    { w: "OWL",        zipf: 4.1 },
-    { w: "DONKEY",     zipf: 3.8 },
-    { w: "OTTER",      zipf: 3.2 },
-    { w: "WOMBAT",     zipf: 2.5 },
+    { w: "RABBIT",     zipf: 4.05 },
+    { w: "OWL",        zipf: 3.87 },
+    { w: "DONKEY",     zipf: 3.62 },
+    { w: "OTTER",      zipf: 3.37 },
+    { w: "WOMBAT",     zipf: 2.58 },
   ]},
   { theme: "Kitchen drawer", words: [
-    { w: "SPOON",      zipf: 4.2 },
-    { w: "KETTLE",     zipf: 3.7 },
-    { w: "WHISK",      zipf: 3.2 },
-    { w: "LADLE",      zipf: 2.8 },
-    { w: "COLANDER",   zipf: 2.4 },
+    { w: "SPOON",      zipf: 3.88 },
+    { w: "KETTLE",     zipf: 3.54 },
+    { w: "WHISK",      zipf: 3.11 },
+    { w: "LADLE",      zipf: 2.66 },
+    { w: "COLANDER",   zipf: 2.37 },
   ]},
   { theme: "The band", words: [
-    { w: "DRUM",       zipf: 4.3 },
-    { w: "FLUTE",      zipf: 3.6 },
-    { w: "BANJO",      zipf: 3.15 },
-    { w: "TUBA",       zipf: 2.8 },
-    { w: "MANDOLIN",   zipf: 2.5 },
+    { w: "DRUM",       zipf: 4.11 },
+    { w: "FLUTE",      zipf: 3.52 },
+    { w: "BANJO",      zipf: 3.27 },
+    { w: "TUBA",       zipf: 2.84 },
+    { w: "MANDOLIN",   zipf: 2.78 },
   ]},
   { theme: "Wardrobe", words: [
-    { w: "JACKET",     zipf: 4.4 },
-    { w: "SCARF",      zipf: 3.8 },
-    { w: "CARDIGAN",   zipf: 3.2 },
-    { w: "MITTEN",     zipf: 2.8 },
-    { w: "GALOSHES",   zipf: 2.0 },
+    { w: "JACKET",     zipf: 4.32 },
+    { w: "SCARF",      zipf: 3.68 },
+    { w: "CARDIGAN",   zipf: 3.21 },
+    { w: "MITTEN",     zipf: 2.48 },
+    { w: "GALOSHES",   zipf: 1.81 },
   ]},
   { theme: "Parts of a house", words: [
-    { w: "GARAGE",     zipf: 4.4 },
-    { w: "PORCH",      zipf: 4.0 },
-    { w: "ATTIC",      zipf: 3.75 },
-    { w: "CELLAR",     zipf: 3.4 },
-    { w: "VERANDA",    zipf: 2.6 },
+    { w: "GARAGE",     zipf: 4.25 },
+    { w: "PORCH",      zipf: 3.85 },
+    { w: "ATTIC",      zipf: 3.63 },
+    { w: "CELLAR",     zipf: 3.60 },
+    { w: "VERANDA",    zipf: 2.89 },
   ]},
   { theme: "Landscape", words: [
-    { w: "VALLEY",     zipf: 4.4 },
-    { w: "CLIFF",      zipf: 4.0 },
-    { w: "SWAMP",      zipf: 3.7 },
-    { w: "MEADOW",     zipf: 3.3 },
-    { w: "RAVINE",     zipf: 2.7 },
+    { w: "VALLEY",     zipf: 4.72 },
+    { w: "CLIFF",      zipf: 4.10 },
+    { w: "SWAMP",      zipf: 3.84 },
+    { w: "MEADOW",     zipf: 3.60 },
+    { w: "RAVINE",     zipf: 3.15 },
   ]},
   { theme: "Trades", words: [
-    { w: "PILOT",      zipf: 4.4 },
-    { w: "BUTCHER",    zipf: 3.7 },
-    { w: "PLUMBER",    zipf: 3.4 },
-    { w: "BLACKSMITH", zipf: 3.0 },
-    { w: "COBBLER",    zipf: 2.6 },
+    { w: "PILOT",      zipf: 4.52 },
+    { w: "BUTCHER",    zipf: 3.75 },
+    { w: "PLUMBER",    zipf: 3.36 },
+    { w: "BLACKSMITH", zipf: 3.26 },
+    { w: "COBBLER",    zipf: 2.82 },
+  ]},
+  { theme: "Breakfast table", words: [
+    { w: "BUTTER",     zipf: 4.40 },
+    { w: "TOAST",      zipf: 3.96 },
+    { w: "YOGURT",     zipf: 3.63 },
+    { w: "WAFFLE",     zipf: 3.30 },
+    { w: "MARMALADE",  zipf: 2.89 },
+  ]},
+  { theme: "Office life", words: [
+    { w: "DEADLINE",     zipf: 4.12 },
+    { w: "SPREADSHEET",  zipf: 3.31 },
+    { w: "CUBICLE",      zipf: 3.07 },
+    { w: "LANYARD",      zipf: 2.65 },
+    { w: "PAPERCLIP",    zipf: 2.32 },
+  ]},
+  { theme: "Superstition", words: [
+    { w: "LUCK",       zipf: 4.91 },
+    { w: "FORTUNE",    zipf: 4.30 },
+    { w: "CURSE",      zipf: 4.07 },
+    { w: "HEX",        zipf: 3.31 },
+    { w: "TALISMAN",   zipf: 3.06 },
+  ]},
+  { theme: "Desserts", words: [
+    { w: "PUDDING",    zipf: 3.61 },
+    { w: "FUDGE",      zipf: 3.33 },
+    { w: "TRUFFLE",    zipf: 3.06 },
+    { w: "MERINGUE",   zipf: 2.79 },
+    { w: "TIRAMISU",   zipf: 2.46 },
+  ]},
+  { theme: "Insects", words: [
+    { w: "ANT",          zipf: 3.86 },
+    { w: "CATERPILLAR",  zipf: 3.38 },
+    { w: "MANTIS",       zipf: 3.11 },
+    { w: "LADYBUG",      zipf: 2.67 },
+    { w: "EARWIG",       zipf: 2.07 },
+  ]},
+  { theme: "Night sky", words: [
+    { w: "MOON",       zipf: 4.70 },
+    { w: "SATELLITE",  zipf: 4.33 },
+    { w: "ECLIPSE",    zipf: 3.81 },
+    { w: "METEOR",     zipf: 3.55 },
+    { w: "NEBULA",     zipf: 3.23 },
+  ]},
+  { theme: "School supplies", words: [
+    { w: "PENCIL",       zipf: 3.95 },
+    { w: "NOTEBOOK",     zipf: 3.74 },
+    { w: "CRAYON",       zipf: 3.05 },
+    { w: "CHALKBOARD",   zipf: 2.77 },
+    { w: "PROTRACTOR",   zipf: 2.06 },
+  ]},
+  { theme: "Card games", words: [
+    { w: "BLACKJACK",  zipf: 3.16 },
+    { w: "RUMMY",      zipf: 2.37 },
+    { w: "CRIBBAGE",   zipf: 2.08 },
+    { w: "EUCHRE",     zipf: 1.86 },
+    { w: "PINOCHLE",   zipf: 1.67 },
+  ]},
+  { theme: "Punctuation", words: [
+    { w: "COMMA",        zipf: 3.27 },
+    { w: "ASTERISK",     zipf: 3.05 },
+    { w: "APOSTROPHE",   zipf: 2.76 },
+    { w: "PARENTHESIS",  zipf: 2.63 },
+    { w: "ELLIPSIS",     zipf: 2.43 },
+  ]},
+  { theme: "Traffic", words: [
+    { w: "TRAFFIC",       zipf: 4.85 },
+    { w: "HIGHWAY",       zipf: 4.49 },
+    { w: "INTERSECTION",  zipf: 3.88 },
+    { w: "ROUNDABOUT",    zipf: 3.33 },
+    { w: "CROSSWALK",     zipf: 2.63 },
+  ]},
+  { theme: "Zoo animals", words: [
+    { w: "ELEPHANT",   zipf: 4.08 },
+    { w: "PANDA",      zipf: 3.65 },
+    { w: "GIRAFFE",    zipf: 3.32 },
+    { w: "FLAMINGO",   zipf: 3.06 },
+    { w: "MEERKAT",    zipf: 2.49 },
+  ]},
+  { theme: "Spooky season", words: [
+    { w: "GHOST",        zipf: 4.42 },
+    { w: "CEMETERY",     zipf: 4.06 },
+    { w: "PHANTOM",      zipf: 3.78 },
+    { w: "WEREWOLF",     zipf: 3.33 },
+    { w: "POLTERGEIST",  zipf: 2.57 },
+  ]},
+  { theme: "Pirate life", words: [
+    { w: "TREASURE",   zipf: 4.17 },
+    { w: "PARROT",     zipf: 3.49 },
+    { w: "SCHOONER",   zipf: 3.03 },
+    { w: "GALLEON",    zipf: 2.57 },
+    { w: "DOUBLOON",   zipf: 1.68 },
+  ]},
+  { theme: "Norse myth", words: [
+    { w: "THOR",       zipf: 3.69 },
+    { w: "LOKI",       zipf: 3.27 },
+    { w: "RAGNAROK",   zipf: 2.64 },
+    { w: "YGGDRASIL",  zipf: 2.31 },
+    { w: "LONGSHIP",   zipf: 1.56 },
+  ]},
+  { theme: "Myth and monsters", words: [
+    { w: "GRIFFIN",    zipf: 3.90 },
+    { w: "UNICORN",    zipf: 3.54 },
+    { w: "HYDRA",      zipf: 3.31 },
+    { w: "BANSHEE",    zipf: 2.81 },
+    { w: "BASILISK",   zipf: 2.42 },
+  ]},
+  { theme: "Wizardry", words: [
+    { w: "WIZARD",       zipf: 3.93 },
+    { w: "POTION",       zipf: 3.32 },
+    { w: "CAULDRON",     zipf: 3.06 },
+    { w: "INCANTATION",  zipf: 2.56 },
+    { w: "SPELLBOOK",    zipf: 1.74 },
+  ]},
+  { theme: "Deep sea", words: [
+    { w: "SHARK",      zipf: 4.10 },
+    { w: "SUBMARINE",  zipf: 3.81 },
+    { w: "OCTOPUS",    zipf: 3.46 },
+    { w: "LEVIATHAN",  zipf: 3.09 },
+    { w: "KRAKEN",     zipf: 2.85 },
+  ]},
+  { theme: "Dinosaurs", words: [
+    { w: "FOSSIL",           zipf: 3.99 },
+    { w: "DINOSAUR",         zipf: 3.77 },
+    { w: "EXCAVATION",       zipf: 3.46 },
+    { w: "PALEONTOLOGIST",   zipf: 2.52 },
+    { w: "STEGOSAURUS",      zipf: 2.12 },
   ]},
 ];
 
@@ -366,6 +574,16 @@ const LS = {
     try { localStorage.setItem("wordrank." + key, JSON.stringify(val)); } catch {}
   },
 };
+
+/* ================= analytics (GA4 via gtag.js, see <head>) =================
+   Thin wrapper so a missing/blocked gtag (adblock, offline) never throws.
+   GA4 already tracks unique users/sessions/page_views automatically via its
+   own client_id cookie — no code needed for that. Everything below is the
+   game-specific layer on top. See the "ANALYTICS EVENTS" note in the header
+   comment for the full list of event names and params. */
+function track(name, params) {
+  try { if (typeof gtag === "function") gtag("event", name, params || {}); } catch {}
+}
 const EMPTY_STATS = () => ({
   played: 0, wins: 0, losses: 0,
   dist: Object.fromEntries(Array.from({ length: CONFIG.MAX_GUESSES }, (_, i) => [i + 1, 0])),
@@ -390,16 +608,12 @@ function NextPuzzleCountdown() {
 /* ================= the game ================= */
 function WordRank() {
   const dayNum = daysSinceEpoch();
-  const todayIdx = dayNum % PUZZLES.length;   // TODO with 365+ sets: use dayNum directly
-  const puzzleNoFor = (idx) => (idx === todayIdx ? dayNum + 1 : "T" + (idx + 1)); // dev puzzles get a T-number
-
-  const [puzzleIdx, setPuzzleIdx] = useState(todayIdx);
-  const [showTheme, setShowTheme] = useState(CONFIG.SHOW_THEME);
-  const [devOpen, setDevOpen] = useState(false);
+  // Single daily puzzle, no in-app way to switch — see v8 note in the
+  // header comment for why the old dev panel/test-puzzle switcher is gone.
+  const puzzleIdx = dayNum % PUZZLES.length;   // TODO with 365+ sets: use dayNum directly
 
   const puzzle = PUZZLES[puzzleIdx];
   const n = puzzle.words.length;
-  const isToday = puzzleIdx === todayIdx;
 
   const initialOrder = useMemo(() => seededShuffle(n, (puzzleIdx + 1) * 7919), [puzzleIdx, n]);
 
@@ -419,7 +633,20 @@ function WordRank() {
   // First-visit primer: shown once automatically, reopenable any time via
   // the "i" button (which does not touch the seenIntro flag).
   const [showIntro, setShowIntro] = useState(() => !LS.get("seenIntro", false));
-  const closeIntro = () => { LS.set("seenIntro", true); setShowIntro(false); };
+  const closeIntro = () => {
+    const firstTime = !LS.get("seenIntro", false);
+    LS.set("seenIntro", true);
+    setShowIntro(false);
+    track("howto_dismissed", { first_time: firstTime });
+  };
+
+  // Fires once per page load: a real visit to today's puzzle, plus whether
+  // the auto-shown primer greeted them (vs. a returning player who already
+  // dismissed it on a prior visit).
+  useEffect(() => {
+    track("puzzle_view", { puzzle_no: dayNum + 1, day_num: dayNum });
+    if (!LS.get("seenIntro", false)) track("howto_shown", { trigger: "auto" });
+  }, []);
 
   // Results overlay: shown automatically whenever the puzzle is done (fresh
   // win/loss, or a completed game restored from localStorage). "BACK TO
@@ -428,22 +655,15 @@ function WordRank() {
   // to the bottom of the page and easy to miss/lose on a short phone).
   const [showResults, setShowResults] = useState(true);
 
-  // Persist today's game on every change (never for dev-panel puzzles).
+  // Persist today's game on every change.
   useEffect(() => {
-    if (isToday) LS.set("state", { dayNum, order, guesses, status });
-  }, [order, guesses, status, isToday, dayNum]);
+    LS.set("state", { dayNum, order, guesses, status });
+  }, [order, guesses, status, dayNum]);
 
   /* ---------- drag state ---------- */
   const listRef = useRef(null);
   const rowHRef = useRef(62);
   const [drag, setDrag] = useState(null); // {from, startY, delta, moved}
-
-  const resetFor = (idx) => {
-    setPuzzleIdx(idx);
-    setOrder(seededShuffle(PUZZLES[idx].words.length, (idx + 1) * 7919));
-    setSelected(null); setGuesses([]); setStatus("playing"); setToast(""); setDrag(null);
-    setShowResults(true);
-  };
 
   const done = status !== "playing";
   const lastGuess = guesses[guesses.length - 1];
@@ -550,7 +770,6 @@ function WordRank() {
 
   // Stats update exactly once per real day (guarded by lastCompletedDay).
   const recordCompletion = (won, guessCount) => {
-    if (!isToday) return;
     setStats((prev) => {
       if (prev.lastCompletedDay === dayNum) return prev;
       const next = { ...prev, dist: { ...prev.dist } };
@@ -577,30 +796,51 @@ function WordRank() {
     const next = [...guesses, { order: [...order], colors }];
     setGuesses(next);
     const won = colors.every((c) => c === "green");
-    if (won) { setStatus("won"); recordCompletion(true, next.length); }
-    else if (next.length >= CONFIG.MAX_GUESSES) { setStatus("lost"); recordCompletion(false); }
+    track("guess_submitted", {
+      puzzle_no: dayNum + 1,
+      guess_number: next.length,
+      green_count: colors.filter((c) => c === "green").length,
+      is_win: won,
+    });
+    if (won) {
+      setStatus("won"); recordCompletion(true, next.length);
+      track("game_complete", { puzzle_no: dayNum + 1, result: "win", guesses_used: next.length, max_guesses: CONFIG.MAX_GUESSES });
+    } else if (next.length >= CONFIG.MAX_GUESSES) {
+      setStatus("lost"); recordCompletion(false);
+      track("game_complete", { puzzle_no: dayNum + 1, result: "loss", guesses_used: next.length, max_guesses: CONFIG.MAX_GUESSES });
+    }
   };
 
   const shareText = () => {
-    const no = isToday ? "#" + (dayNum + 1) : "#" + puzzleNoFor(puzzleIdx);
-    const head = CONFIG.GAME_NAME + " " + no + " — " + (status === "won" ? guesses.length : "X") + "/" + CONFIG.MAX_GUESSES;
+    const head = CONFIG.GAME_NAME + " #" + (dayNum + 1) + " — " + (status === "won" ? guesses.length : "X") + "/" + CONFIG.MAX_GUESSES;
     const grid = guesses.map((g) => g.colors.map((c) => EMOJI[c]).join("")).join("\n");
     return head + "\n" + grid + "\n" + CONFIG.SHARE_URL;
   };
   const doShare = async () => {
     const text = shareText();
+    // GA4's recommended "share" event — fired per successful path below so
+    // method reflects what actually happened, not just what was attempted
+    // (a cancelled native sheet falls through to clipboard, see below).
+    const trackShare = (method) => {
+      track("share", {
+        method, content_type: "wordrank_result", item_id: "puzzle_" + (dayNum + 1),
+        result: status, guesses_used: guesses.length,
+      });
+    };
     // Native share sheet on mobile; clipboard everywhere else.
     if (navigator.share) {
-      try { await navigator.share({ text }); return; } catch (e) { /* user cancelled -> fall through */ }
+      try { await navigator.share({ text }); trackShare("native"); return; } catch (e) { /* user cancelled -> fall through */ }
     }
     try {
       await navigator.clipboard.writeText(text);
       setToast("Copied to clipboard");
+      trackShare("clipboard");
     } catch {
       const ta = document.createElement("textarea");
       ta.value = text; document.body.appendChild(ta);
       ta.select(); document.execCommand("copy"); ta.remove();
       setToast("Copied to clipboard");
+      trackShare("clipboard_fallback");
     }
     setTimeout(() => setToast(""), 1800);
   };
@@ -614,7 +854,7 @@ function WordRank() {
     <>
       {/* reopens the HowToPlay primer any time; does not touch seenIntro */}
       <button
-        onClick={() => setShowIntro(true)}
+        onClick={() => { setShowIntro(true); track("howto_shown", { trigger: "manual" }); }}
         aria-label="How to play"
         style={{
           position: "fixed", top: 14, right: 14, zIndex: 50,
@@ -639,26 +879,11 @@ function WordRank() {
             {CONFIG.GAME_NAME}
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 4, fontSize: 10.5, color: C.faint, letterSpacing: "1.5px" }}>
-            {/* tapping the puzzle number opens the dev panel (playtest affordance) */}
-            <button onClick={() => setDevOpen(!devOpen)} style={{ background: "none", border: "none", color: C.faint, fontFamily: "inherit", fontSize: 10.5, letterSpacing: "1.5px", padding: 0 }}>
-              No. {puzzleNoFor(puzzleIdx)}
-            </button>
+            <span>No. {dayNum + 1}</span>
             <span>·</span>
-            <span>{showTheme ? puzzle.theme.toUpperCase() : "RANK BY HOW COMMON"}</span>
+            <span>{CONFIG.SHOW_THEME ? puzzle.theme.toUpperCase() : "RANK BY HOW COMMON"}</span>
           </div>
         </header>
-
-        {/* dev panel */}
-        {devOpen && (
-          <div style={{ margin: "10px 0", padding: 10, border: "1px dashed " + C.faint, fontSize: 11, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ color: C.faint }}>DEV</span>
-            <button onClick={() => resetFor((puzzleIdx + PUZZLES.length - 1) % PUZZLES.length)} style={devBtn}>← prev</button>
-            <button onClick={() => resetFor((puzzleIdx + 1) % PUZZLES.length)} style={devBtn}>next →</button>
-            <button onClick={() => setShowTheme(!showTheme)} style={devBtn}>{showTheme ? "hide theme" : "show theme"}</button>
-            <button onClick={() => resetFor(puzzleIdx)} style={devBtn}>reset</button>
-            {!isToday && <span style={{ color: C.faint }}>(test puzzle — no stats)</span>}
-          </div>
-        )}
 
         {/* color key — pinned at TOP, not the bottom: on a short phone the
             bottom of the page can scroll out of view mid-game, and players
@@ -768,7 +993,16 @@ function WordRank() {
         )}
 
         <footer style={{ textAlign: "center", fontSize: 9, color: C.faint, letterSpacing: "1px", marginTop: 20 }}>
-          FREQUENCY DATA: MOSTLY PLACEHOLDER — VERIFIED VIA WORDFREQ WHERE NOTED
+          <div>FREQUENCY DATA: VERIFIED VIA WORDFREQ (ENGLISH CORPUS)</div>
+          <a
+            href={CONFIG.FEEDBACK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => track("feedback_link_clicked", { puzzle_no: dayNum + 1 })}
+            style={{ display: "inline-block", marginTop: 10, color: C.faint, letterSpacing: "1.5px", textDecoration: "underline" }}
+          >
+            PROBLEMS OR FEEDBACK?
+          </a>
         </footer>
       </div>
       </div>
@@ -778,7 +1012,7 @@ function WordRank() {
           see v6 note. "BACK TO PUZZLE" hides it; the pill below reopens it. */}
       {done && showResults && (
         <ResultsOverlay
-          onClose={() => setShowResults(false)}
+          onClose={() => { setShowResults(false); track("results_dismissed", { puzzle_no: dayNum + 1 }); }}
           won={status === "won"}
           guessCount={guesses.length}
           words={puzzle.words}
@@ -786,15 +1020,13 @@ function WordRank() {
           stats={stats}
           winPct={winPct}
           maxDist={maxDist}
-          isToday={isToday}
-          onNextPuzzle={() => resetFor((puzzleIdx + 1) % PUZZLES.length)}
           doShare={doShare}
           toast={toast}
         />
       )}
       {done && !showResults && (
         <button
-          onClick={() => setShowResults(true)}
+          onClick={() => { setShowResults(true); track("results_reopened", { puzzle_no: dayNum + 1 }); }}
           style={{
             position: "fixed", bottom: 18, left: "50%", transform: "translateX(-50%)",
             zIndex: 60, background: C.ink, color: C.paper, border: "none", borderRadius: 20,
@@ -810,10 +1042,6 @@ function WordRank() {
   );
 }
 
-const devBtn = {
-  background: "none", border: "1px solid #6B7568", color: "#20291F",
-  fontFamily: "inherit", fontSize: 11, padding: "3px 8px", borderRadius: 2,
-};
 function RailLabel({ text }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -900,7 +1128,7 @@ function HowToPlay({ onClose, maxGuesses }) {
    first. "THE RECORD SHOWS" reveal is last: satisfying but least urgent.
    "BACK TO PUZZLE" lets players see their finished (all-green/locked) board
    underneath; WordRank renders a floating "VIEW RESULTS" pill to reopen. */
-function ResultsOverlay({ onClose, won, guessCount, words, maxZipf, stats, winPct, maxDist, isToday, onNextPuzzle, doShare, toast }) {
+function ResultsOverlay({ onClose, won, guessCount, words, maxZipf, stats, winPct, maxDist, doShare, toast }) {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 90, background: "rgba(32,41,31,0.92)",
@@ -970,11 +1198,7 @@ function ResultsOverlay({ onClose, won, guessCount, words, maxZipf, stats, winPc
         </div>
 
         <div style={{ textAlign: "center", fontSize: 10, letterSpacing: "2px", color: C.faint, marginTop: 16 }}>
-          {isToday ? <NextPuzzleCountdown /> : (
-            <button onClick={onNextPuzzle} style={{ background: "none", color: C.faint, border: "1px solid " + C.line, borderRadius: 3, fontFamily: "inherit", fontSize: 10, letterSpacing: "2px", padding: "8px 14px" }}>
-              NEXT TEST PUZZLE
-            </button>
-          )}
+          <NextPuzzleCountdown />
         </div>
       </div>
     </div>
